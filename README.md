@@ -38,7 +38,7 @@ Reference:
 
 # 🎬 Demo
 
-![graham demo](assets/graham-demo.gif)
+https://github.com/user-attachments/assets/13609476-83ff-4abb-b83a-05ceda12e6ac 
 
 # 🚀 Installation
 
