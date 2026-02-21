@@ -16,7 +16,7 @@ UNIVERSE_PRESETS: dict[str, list[str]] = {
     "japan": ["7203.T", "6758.T", "9984.T", "8035.T", "6501.T", "6861.T", "9432.T", "8306.T", "6098.T", "7974.T", "6367.T", "9433.T"],
 }
 UNIVERSE_PRESET_DESCRIPTIONS: dict[str, str] = {
-    "sample": "KISS sample universe",
+    "sample": "Sample universe",
     "world": "World large caps and global leaders",
     "usa": "USA large caps",
     "emerging_markets": "Emerging markets mix",

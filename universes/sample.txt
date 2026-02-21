@@ -1,4 +1,4 @@
-# KISS sample universe
+# Sample universe
 AAPL
 MSFT
 JNJ

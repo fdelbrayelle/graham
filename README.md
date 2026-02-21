@@ -1,8 +1,8 @@
 # 👤 Who Is Benjamin Graham?
 
-Benjamin Graham (1894-1976) is widely considered the father of value investing. He promoted disciplined stock selection based on financial strength, earnings quality, and buying at a discount to intrinsic value.
+[Benjamin Graham](https://en.wikipedia.org/wiki/Benjamin_Graham) (1894-1976) is widely considered the father of value investing. He promoted disciplined stock selection based on financial strength, earnings quality, and buying at a discount to intrinsic value.
 
-This project applies a practical, KISS version of Graham-style screening in a fullscreen terminal UI.
+This project applies a practical version of Graham-style screening in a fullscreen terminal UI.
 
 > Past performance does not guarantee future results.  
 > Investing involves risk.  
@@ -83,7 +83,7 @@ The app uses one input box at the bottom:
 
 # 📊 Product Flow
 
-KISS pipeline:
+Pipeline:
 1. Load a universe from `universes/*.txt`
 2. Compute fundamentals once
 3. Refresh prices every `X` seconds
@@ -94,7 +94,7 @@ KISS pipeline:
    - `P/E` ascending
 
 Ranking columns:
-- `rank | ticker | score | price | V | MoS | P/E | P/B | dividend`
+- `rank | ticker | company | score | rating | price | as_of | V | MoS | P/E | P/B | dividend`
 
 Score formula:
 - `PASS / scored_criteria`

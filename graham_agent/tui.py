@@ -8,6 +8,7 @@ from pathlib import Path
 
 from textual import on
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.events import Key, Resize
 from textual.widgets import DataTable, Header, Input, RichLog, Static
@@ -21,6 +22,10 @@ from graham_agent.settings import UserSettings, load_user_settings, save_user_se
 
 class GrahamApp(App[None]):
     TITLE = "graham"
+    BINDINGS = [
+        Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
+        Binding("ctrl+q", "noop", "", show=False, priority=True),
+    ]
     CSS = """
     Screen {
         layout: vertical;
@@ -146,6 +151,7 @@ class GrahamApp(App[None]):
     async def on_mount(self) -> None:
         self._setup_table_columns()
         self._apply_responsive_layout()
+        self.query_one("#prompt", Input).focus()
 
         default_spec = self.settings.default_universe or "sample"
         tickers, note = self.processor.resolve_universe(default_spec)
@@ -344,8 +350,10 @@ class GrahamApp(App[None]):
         payload = [
             {
                 "ticker": item.ticker,
+                "company_name": item.company_name,
                 "score": item.score,
                 "price": item.price,
+                "price_time": item.price_time,
                 "intrinsic_value": item.intrinsic_value,
                 "mos": item.mos,
                 "pe": item.pe,
@@ -362,7 +370,18 @@ class GrahamApp(App[None]):
         with output.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(
                 handle,
-                fieldnames=["ticker", "score", "price", "intrinsic_value", "mos", "pe", "pb", "dividend_rate"],
+                fieldnames=[
+                    "ticker",
+                    "company_name",
+                    "score",
+                    "price",
+                    "price_time",
+                    "intrinsic_value",
+                    "mos",
+                    "pe",
+                    "pb",
+                    "dividend_rate",
+                ],
             )
             writer.writeheader()
             writer.writerows(payload)
@@ -494,9 +513,11 @@ class GrahamApp(App[None]):
             table.add_row(
                 str(rank),
                 item.ticker,
+                item.company_name or "N/A",
                 f"{item.score:.2f}",
                 self._score_badge(item.score),
                 format_metric(item.price),
+                item.price_time or "N/A",
                 format_metric(item.intrinsic_value),
                 format_metric(item.mos, percentage=True),
                 format_metric(item.pe),
@@ -517,8 +538,10 @@ class GrahamApp(App[None]):
 
         lines = [
             f"{self.tr('Ticker')}: {analysis.ticker}",
+            f"{self.tr('Company')}: {analysis.company_name or 'N/A'}",
             f"{self.tr('Score')}: {analysis.score:.2f}",
             f"{self.tr('Price')}: {format_metric(analysis.price)}",
+            f"{self.tr('As of')}: {analysis.price_time or 'N/A'}",
             f"V: {format_metric(analysis.intrinsic_value)}",
             f"MoS: {format_metric(analysis.mos, percentage=True)}",
             "",
@@ -599,9 +622,11 @@ class GrahamApp(App[None]):
         table.add_columns(
             self.tr("rank"),
             self.tr("ticker"),
+            self.tr("company"),
             self.tr("score"),
             self.tr("rating"),
             self.tr("price"),
+            self.tr("as_of"),
             "V",
             "MoS",
             "P/E",
@@ -615,6 +640,9 @@ class GrahamApp(App[None]):
         if score >= self.score_orange_min:
             return "🟠"
         return "🔴"
+
+    def action_noop(self) -> None:
+        return
 
     def _apply_responsive_layout(self) -> None:
         narrow = self.size.width < 120

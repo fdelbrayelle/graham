@@ -7,7 +7,7 @@ from graham_agent.tui import run_tui
 cli = typer.Typer(
     add_completion=False,
     no_args_is_help=False,
-    help="graham: KISS fullscreen TUI to scan stocks.",
+    help="graham: fullscreen TUI to scan stocks.",
 )
 
 

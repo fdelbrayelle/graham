@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -22,8 +23,10 @@ class CriterionResult:
 @dataclass
 class StockAnalysis:
     ticker: str
+    company_name: str | None = None
     score: float = 0.0
     price: float | None = None
+    price_time: str | None = None
     intrinsic_value: float | None = None
     mos: float | None = None
     pe: float | None = None
@@ -125,6 +128,45 @@ def _extract_price(info: dict[str, Any], ticker: Any) -> float | None:
                 number = safe_float(fast_info.get(key))
                 if number is not None and number > 0:
                     return number
+    except Exception:
+        return None
+    return None
+
+
+def _format_market_time(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        if hasattr(value, "timestamp"):
+            timestamp = float(value.timestamp())
+        elif isinstance(value, (int, float)):
+            timestamp = float(value)
+        elif isinstance(value, str):
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            timestamp = parsed.timestamp()
+        else:
+            return None
+
+        if timestamp <= 0:
+            return None
+        dt = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        return dt.strftime("%Y-%m-%d %H:%M UTC")
+    except Exception:
+        return None
+
+
+def _extract_price_time(info: dict[str, Any], ticker: Any) -> str | None:
+    for key in ("regularMarketTime", "postMarketTime", "preMarketTime"):
+        label = _format_market_time(info.get(key))
+        if label is not None:
+            return label
+    try:
+        fast_info = getattr(ticker, "fast_info", None)
+        if fast_info is not None:
+            for key in ("last_price_time", "regular_market_time", "last_time"):
+                label = _format_market_time(fast_info.get(key))
+                if label is not None:
+                    return label
     except Exception:
         return None
     return None
@@ -317,6 +359,7 @@ def analyze_symbol(
         )
 
     price = _extract_price(info, ticker)
+    price_time = _extract_price_time(info, ticker)
     eps_series = extract_eps_series(ticker)
 
     trailing_eps = safe_float(info.get("trailingEps")) or safe_float(info.get("epsTrailingTwelveMonths"))
@@ -347,6 +390,9 @@ def analyze_symbol(
 
     pb = safe_float(info.get("priceToBook"))
     dividend_rate = safe_float(info.get("dividendRate"))
+    company_name = (
+        str(info.get("longName") or info.get("shortName") or info.get("displayName") or symbol).strip()
+    )
 
     notes: list[str] = []
     if trailing_eps is None:
@@ -356,8 +402,10 @@ def analyze_symbol(
 
     return StockAnalysis(
         ticker=symbol,
+        company_name=company_name,
         score=score,
         price=price,
+        price_time=price_time,
         intrinsic_value=intrinsic_value,
         mos=mos,
         pe=pe,
@@ -433,24 +481,32 @@ class GrahamEngine:
             if ticker is None:
                 continue
             previous_price = analysis.price
-            price = self._read_live_price(ticker)
-            if price is None:
+            snapshot = self._read_live_snapshot(ticker)
+            if snapshot is None:
                 continue
+            price, price_time = snapshot
             analysis.price = price
+            if price_time is not None:
+                analysis.price_time = price_time
             if analysis.intrinsic_value is not None:
                 analysis.mos = compute_margin_of_safety(analysis.intrinsic_value, analysis.price)
             if previous_price and previous_price > 0 and analysis.pe is not None:
                 analysis.pe = analysis.pe * (price / previous_price)
         return rank_analyses(self.analyses)
 
-    def _read_live_price(self, ticker: Any) -> float | None:
+    def _read_live_snapshot(self, ticker: Any) -> tuple[float, str | None] | None:
         try:
             fast_info = getattr(ticker, "fast_info", None)
             if fast_info is not None:
+                price_time = None
+                for time_key in ("last_price_time", "regular_market_time", "last_time"):
+                    price_time = _format_market_time(fast_info.get(time_key))
+                    if price_time is not None:
+                        break
                 for key in ("last_price", "regular_market_price", "previous_close"):
                     number = safe_float(fast_info.get(key))
                     if number is not None and number > 0:
-                        return number
+                        return number, price_time
         except Exception:
             return None
         return None
