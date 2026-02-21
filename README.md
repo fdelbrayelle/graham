@@ -97,9 +97,10 @@ Robustness policy:
 # 🧭 Slash Commands
 
 - `/help`
+- `/universes`
 - `/lang [language-code]`
 - `/model [none|model-name]`
-- `/universe [sample|sp500|cac40|custom:path]`
+- `/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]`
 - `/default-universe [name|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
@@ -114,6 +115,7 @@ Context-aware autocompletion in the input overlay:
 - `/lang` -> common language codes (`en`, `fr`, `es`, `de`, ...)
 - `/model` -> `none` + model examples
 - `/universe` -> available universes + `custom:path`
+- `/default-universe` -> available presets
 - `/export` -> `csv/json`
 - `/scan` -> `--top`, `--min-score`, `--refresh`
 
@@ -188,6 +190,12 @@ Set and persist your default universe:
 ```
 
 This preference is saved in `~/.graham/config.json` and automatically reused on next launch.
+
+List all universes with metadata:
+
+```text
+/universes
+```
 
 # 🗂️ Project Structure
 

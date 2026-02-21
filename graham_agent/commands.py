@@ -25,6 +25,7 @@ UNIVERSE_ALIASES = {
 class CommandProcessor:
     COMMANDS = [
         "/help",
+        "/universes",
         "/lang",
         "/model",
         "/universe",
@@ -122,6 +123,9 @@ class CommandProcessor:
 
         if command == "/help":
             return self.help_text()
+
+        if command == "/universes":
+            return self.list_universes_text()
 
         if command == "/lang":
             if not args:
@@ -240,6 +244,7 @@ class CommandProcessor:
         return self._t(
             "Available commands:\n"
             "/help\n"
+            "/universes\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
             "/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]\n"
@@ -251,6 +256,27 @@ class CommandProcessor:
             "/export [csv|json]\n\n"
             + model_note
         )
+
+    def list_universes_text(self) -> str:
+        root = Path(__file__).resolve().parent.parent
+        universe_dir = root / "universes"
+        if not universe_dir.exists():
+            return self._t("No universes directory found.")
+
+        default_universe_raw = str(getattr(self.app, "get_default_universe", lambda: "sample")())
+        default_universe = UNIVERSE_ALIASES.get(default_universe_raw.strip().lower(), default_universe_raw.strip().lower())
+
+        lines = [self._t("Available universes:")]
+        for name in discover_universe_names():
+            path = universe_dir / f"{name}.txt"
+            description, count = self._read_universe_metadata(path)
+            marker = "★" if name == default_universe else " "
+            lines.append(f"{marker} {name:<18} ({count:>3} tickers) - {self._t(description)}")
+
+        lines.append("")
+        lines.append(self._t("Use /universe <name> to load now."))
+        lines.append(self._t("Use /default-universe <name> to persist your default."))
+        return "\n".join(lines)
 
     def parse_scan_options(self, args: list[str]) -> dict[str, float | int | None] | str:
         top: int | None = None
@@ -348,6 +374,25 @@ class CommandProcessor:
         if callable(translator):
             return str(translator(text))
         return text
+
+    def _read_universe_metadata(self, path: Path) -> tuple[str, int]:
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except Exception:
+            return "No description", 0
+
+        description = "No description"
+        count = 0
+        for line in lines:
+            item = line.strip()
+            if not item:
+                continue
+            if item.startswith("#"):
+                if description == "No description":
+                    description = item.lstrip("#").strip() or description
+                continue
+            count += 1
+        return description, count
 
 
 def discover_universe_names() -> list[str]:
