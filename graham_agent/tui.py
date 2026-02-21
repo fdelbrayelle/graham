@@ -58,6 +58,11 @@ class GrahamApp(App[None]):
         border: round #386641;
     }
 
+    #status {
+        height: 1;
+        padding: 0 1;
+    }
+
     #input-wrap {
         height: auto;
         padding: 0;
@@ -108,7 +113,7 @@ class GrahamApp(App[None]):
             startup_language = "en"
         self.i18n = DisplayTranslator(language=startup_language)
         self.language = startup_language
-        self.model = "none"
+        self.model = self.settings.default_model or "none"
         self.refresh_seconds = 15
         self.scan_top: int | None = None
         self.scan_min_score = 0.0
@@ -119,6 +124,10 @@ class GrahamApp(App[None]):
         self._refreshing = False
         self._timer = None
         self._universe_note = "sample"
+        self._scan_loading = False
+        self._scan_spinner_step = 0
+        self._scan_spinner_frames = ["-", "\\", "|", "/"]
+        self._scan_spinner_timer = None
         self.score_green_min = self.settings.score_green_min
         self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
@@ -129,6 +138,7 @@ class GrahamApp(App[None]):
             yield DataTable(id="ranking")
             yield Static(self.tr("No row selected."), id="details")
         yield RichLog(id="log", markup=False, wrap=True)
+        yield Static("", id="status")
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
             yield Static("", id="suggestions")
@@ -143,10 +153,7 @@ class GrahamApp(App[None]):
             default_spec = "sample"
             tickers, note = self.processor.resolve_universe(default_spec)
             self.settings.default_universe = default_spec
-            try:
-                save_user_settings(self.settings)
-            except Exception:
-                pass
+            self._save_settings()
         self.set_universe(tickers, note)
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
         self.write_log("Welcome to graham. Type /help")
@@ -176,15 +183,23 @@ class GrahamApp(App[None]):
 
         self.language = self.i18n.language
         self.settings.default_language = self.language
-        try:
-            save_user_settings(self.settings)
-        except Exception as exc:
-            return False, f"Language updated but could not persist settings: {exc}"
+        saved, save_error = self._save_settings()
+        if not saved:
+            return False, f"Language updated but could not persist settings: {save_error}"
         prompt = self.query_one("#prompt", Input)
         prompt.placeholder = self.tr("Type /help")
         self._setup_table_columns()
         self.refresh_table()
         return True, self.tr(message)
+
+    def set_model(self, model: str) -> tuple[bool, str]:
+        value = model.strip() or "none"
+        self.model = value
+        self.settings.default_model = value
+        saved, save_error = self._save_settings()
+        if not saved:
+            return False, f"Model updated but could not persist settings: {save_error}"
+        return True, f"Model saved: {value}"
 
     def get_rating_thresholds(self) -> tuple[float, float]:
         return self.score_green_min, self.score_orange_min
@@ -203,10 +218,9 @@ class GrahamApp(App[None]):
         self.score_orange_min = orange
         self.settings.score_green_min = green
         self.settings.score_orange_min = orange
-        try:
-            save_user_settings(self.settings)
-        except Exception as exc:
-            return False, f"Thresholds updated but could not persist settings: {exc}"
+        saved, save_error = self._save_settings()
+        if not saved:
+            return False, f"Thresholds updated but could not persist settings: {save_error}"
 
         self.refresh_table()
         return True, (
@@ -226,12 +240,11 @@ class GrahamApp(App[None]):
             return False, f"Cannot set default universe. {note}"
 
         self.settings.default_universe = spec
-        try:
-            save_user_settings(self.settings)
-        except Exception as exc:
-            return False, f"Default universe updated in memory but persistence failed: {exc}"
+        saved, save_error = self._save_settings()
+        if not saved:
+            return False, f"Default universe updated in memory but persistence failed: {save_error}"
 
-        self.set_universe(tickers, note)
+        self.set_universe(tickers, note, remember_spec=spec)
         return True, f"Default universe set to: {spec} ({len(tickers)} tickers)"
 
     def available_universes(self) -> list[str]:
@@ -242,9 +255,12 @@ class GrahamApp(App[None]):
             return [item.ticker for item in self._current_results]
         return list(self.engine.universe)
 
-    def set_universe(self, tickers: list[str], note: str) -> None:
+    def set_universe(self, tickers: list[str], note: str, remember_spec: str | None = None) -> None:
         cleaned = self.engine.set_universe(tickers)
         self._universe_note = note
+        if remember_spec is not None:
+            self.settings.default_universe = remember_spec
+            self._save_settings()
         self.write_log(f"Active universe: {len(cleaned)} tickers ({note})")
 
     async def run_scan(self, top: int | None, min_score: float, refresh: int | None) -> None:
@@ -255,14 +271,18 @@ class GrahamApp(App[None]):
             self._reset_timer()
 
         self.write_log("Running fundamentals scan...")
-        ranked = await asyncio.to_thread(self.engine.scan_fundamentals)
-        self._current_results = filter_ranked(ranked, top=self.scan_top, min_score=self.scan_min_score)
-        self.refresh_table()
+        self._set_scan_loading(True)
+        try:
+            ranked = await asyncio.to_thread(self.engine.scan_fundamentals)
+            self._current_results = filter_ranked(ranked, top=self.scan_top, min_score=self.scan_min_score)
+            self.refresh_table()
 
-        if not self._current_results:
-            self.write_log("No results. Try /scan --min-score 0")
-        else:
-            self.write_log(f"Scan completed: {len(self._current_results)} results")
+            if not self._current_results:
+                self.write_log("No results. Try /scan --min-score 0")
+            else:
+                self.write_log(f"Scan completed: {len(self._current_results)} results")
+        finally:
+            self._set_scan_loading(False)
 
     async def explain_ticker(self, ticker: str, question: str) -> str:
         analysis = next((item for item in self.engine.analyses if item.ticker == ticker), None)
@@ -530,6 +550,39 @@ class GrahamApp(App[None]):
             self.write_log(f"Price refresh error: {exc}")
         finally:
             self._refreshing = False
+
+    def _save_settings(self) -> tuple[bool, str | None]:
+        try:
+            save_user_settings(self.settings)
+        except Exception as exc:
+            return False, str(exc)
+        return True, None
+
+    def _set_scan_loading(self, loading: bool) -> None:
+        self._scan_loading = loading
+        status = self.query_one("#status", Static)
+        if not loading:
+            if self._scan_spinner_timer is not None:
+                try:
+                    self._scan_spinner_timer.stop()
+                except Exception:
+                    pass
+                self._scan_spinner_timer = None
+            status.update("")
+            return
+
+        self._scan_spinner_step = 0
+        if self._scan_spinner_timer is None:
+            self._scan_spinner_timer = self.set_interval(0.12, self._tick_scan_spinner)
+        self._tick_scan_spinner()
+
+    def _tick_scan_spinner(self) -> None:
+        if not self._scan_loading:
+            return
+        status = self.query_one("#status", Static)
+        spinner = self._scan_spinner_frames[self._scan_spinner_step % len(self._scan_spinner_frames)]
+        self._scan_spinner_step += 1
+        status.update(f"{spinner} {self.tr('Loading tickers...')}")
 
     def _reset_timer(self) -> None:
         if self._timer is not None:

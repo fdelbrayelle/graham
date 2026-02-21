@@ -40,6 +40,13 @@ UNIVERSE_ALIASES = {
 }
 
 
+def normalize_universe_spec(spec: str) -> str:
+    value = spec.strip()
+    if value.startswith("custom:"):
+        return value
+    return UNIVERSE_ALIASES.get(value.lower(), value.lower())
+
+
 def universe_search_dirs() -> list[Path]:
     candidates = [
         Path.cwd() / "universes",
@@ -215,7 +222,14 @@ class CommandProcessor:
         if command == "/model":
             if not args:
                 return self._t(f"Current model: {self.app.model}. Usage: /model [none|model-name]")
-            self.app.model = args[0]
+            selected_model = args[0]
+            set_model = getattr(self.app, "set_model", None)
+            if callable(set_model):
+                success, message = set_model(selected_model)
+                if not success:
+                    return self._t(message)
+            else:
+                self.app.model = selected_model
             key_hint = self._model_key_hint(self.app.model)
             if key_hint is None:
                 return self._t(f"Active model: {self.app.model}")
@@ -229,7 +243,7 @@ class CommandProcessor:
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
                 return self._t(f"Empty universe. {note}")
-            self.app.set_universe(tickers, note)
+            self.app.set_universe(tickers, note, remember_spec=normalize_universe_spec(args[0]))
             return self._t(f"Universe loaded: {len(tickers)} tickers ({note})")
 
         if command == "/scan":
@@ -420,10 +434,10 @@ class CommandProcessor:
         return {"top": top, "min_score": min_score, "refresh": refresh}
 
     def resolve_universe(self, spec: str) -> tuple[list[str], str]:
-        normalized = UNIVERSE_ALIASES.get(spec.strip().lower(), spec.strip().lower())
+        normalized = normalize_universe_spec(spec)
 
-        if spec.startswith("custom:"):
-            custom_path = spec.split(":", 1)[1]
+        if normalized.startswith("custom:"):
+            custom_path = normalized.split(":", 1)[1]
             return self._read_universe_file(Path(custom_path)), f"custom:{custom_path}"
 
         universe_file = find_universe_file(normalized)

@@ -11,6 +11,7 @@ class UserSettings:
     score_orange_min: float = 0.60
     default_universe: str = "sample"
     default_language: str = "en"
+    default_model: str = "none"
 
 
 def settings_path() -> Path:
@@ -40,6 +41,10 @@ def load_user_settings() -> UserSettings:
     default_language = payload.get("default_language")
     if isinstance(default_language, str) and default_language.strip():
         settings.default_language = default_language.strip().lower()
+
+    default_model = payload.get("default_model")
+    if isinstance(default_model, str) and default_model.strip():
+        settings.default_model = default_model.strip()
     return settings
 
 

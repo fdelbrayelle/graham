@@ -4,6 +4,11 @@ Benjamin Graham (1894-1976) is widely considered the father of value investing. 
 
 This project applies a practical, KISS version of Graham-style screening in a fullscreen terminal UI.
 
+> Past performance does not guarantee future results.  
+> Investing involves risk.  
+> This application does not provide investment advice.  
+> Over 20 years, among professional equity investors, more than 90% of funds underperform the market. Stock picking must therefore be approached with great caution.
+
 Classical Graham-style rules:
 1. Adequate company size
    - Avoid very small companies with fragile access to financing and limited reporting quality.
@@ -116,6 +121,8 @@ Intrinsic value formula:
 - `g = EPS CAGR` if available, otherwise `0`
 - `MoS = (V - price) / price`
 
+Important: the Graham formula should be used with caution in modern markets. Accounting standards, sector composition, intangible assets, and interest-rate regimes have changed significantly since the original framework.
+
 Robustness policy:
 - Missing data => show `N/A` with an explanatory note.
 - Never crash by design (errors are captured and logged when possible).
@@ -159,6 +166,7 @@ Default model: `none`
 - if a model is set, `/explain` can call `litellm`
 - if LLM call fails, the app logs the error and falls back to a deterministic template
 - `/model` accepts any valid provider model ID; the built-in suggestion list contains verified official IDs.
+- Your selected model is persisted in `~/.graham/config.json`.
 
 Environment variables (depending on provider):
 - `OPENAI_API_KEY`
@@ -234,7 +242,7 @@ Set and persist your default universe:
 /default-universe world
 ```
 
-This preference is saved in `~/.graham/config.json` and automatically reused on next launch.
+Your latest selected universe is saved in `~/.graham/config.json` and automatically reused on next launch.
 
 List all universes with metadata:
 
