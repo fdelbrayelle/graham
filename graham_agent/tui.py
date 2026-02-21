@@ -26,24 +26,30 @@ class GrahamApp(App[None]):
     }
 
     #center {
-        height: 1fr;
-        min-height: 16;
+        height: 2fr;
+        min-height: 12;
     }
 
     #ranking {
-        width: 2fr;
+        width: 3fr;
+        height: 1fr;
         border: round #4c956c;
+        overflow: auto;
     }
 
     #details {
-        width: 1fr;
+        width: 2fr;
+        min-width: 36;
+        height: 1fr;
         border: round #bc4749;
         padding: 1 1;
         overflow-y: auto;
     }
 
     #log {
-        height: 14;
+        height: 1fr;
+        min-height: 8;
+        max-height: 20;
         border: round #386641;
     }
 
@@ -64,6 +70,28 @@ class GrahamApp(App[None]):
 
     #suggestions.visible {
         display: block;
+    }
+
+    @media (max-width: 120) {
+        #center {
+            layout: vertical;
+        }
+
+        #ranking {
+            width: 1fr;
+            height: 1fr;
+        }
+
+        #details {
+            width: 1fr;
+            min-width: 0;
+            max-height: 12;
+        }
+
+        #log {
+            min-height: 6;
+            max-height: 12;
+        }
     }
     """
 
