@@ -36,6 +36,10 @@ Reference:
 - [Benjamin Graham formula](https://en.wikipedia.org/wiki/Benjamin_Graham_formula)
 - [The Intelligent Investor](https://en.wikipedia.org/wiki/The_Intelligent_Investor)
 
+# 🎬 Demo
+
+![graham demo](assets/graham-demo.gif)
+
 # 🚀 Installation
 
 ## 🧰 Prerequisites
