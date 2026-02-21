@@ -167,6 +167,10 @@ Keyboard:
 - `TAB` complete
 - `ENTER` accept
 
+Mouse:
+- click a block in the output log to copy it
+- click the details/criteria panel to copy the full details block
+
 # 🤖 Optional LLM
 
 Default model: `none`

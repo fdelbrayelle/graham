@@ -10,7 +10,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.events import Key, Resize
+from textual.events import Click, Key, Resize
 from textual.widgets import DataTable, Header, Input, RichLog, Static
 
 from graham.commands import CommandProcessor, discover_universe_names
@@ -161,6 +161,8 @@ class GrahamApp(App[None]):
         self._prompt_history: list[str] = []
         self._prompt_history_index: int | None = None
         self._prompt_history_draft = ""
+        self._details_text = self.tr("No row selected.")
+        self._log_blocks: list[tuple[int, int, str]] = []
         self._refreshing = False
         self._timer = None
         self._universe_note = "sample"
@@ -179,7 +181,7 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield DetailsPanel(self.tr("No row selected."), id="details")
+            yield DetailsPanel(self._details_text, id="details")
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
@@ -272,7 +274,13 @@ class GrahamApp(App[None]):
 
     def write_log(self, message: str, translate: bool = True) -> None:
         logger = self.query_one("#log", RichLog)
-        logger.write(self.tr(message) if translate else message)
+        rendered = self.tr(message) if translate else message
+        before_start = int(getattr(logger, "_start_line", 0))
+        before_len = len(logger.lines)
+        logger.write(rendered)
+        after_start = int(getattr(logger, "_start_line", 0))
+        after_len = len(logger.lines)
+        self._register_log_block(rendered, before_start + before_len, after_start + after_len, after_start)
 
     def get_default_universe(self) -> str:
         return self.settings.default_universe
@@ -466,6 +474,30 @@ class GrahamApp(App[None]):
         success, message = self.set_sort(column)
         if success:
             self.write_log(message, translate=False)
+
+    @on(Click, "#log")
+    def on_log_clicked(self, event: Click) -> None:
+        logger = self.query_one("#log", RichLog)
+        content_offset = event.get_content_offset(logger)
+        if content_offset is None:
+            return
+
+        scroll_y = int(getattr(logger, "scroll_y", 0))
+        start_line = int(getattr(logger, "_start_line", 0))
+        absolute_line = start_line + max(0, int(content_offset.y) + scroll_y)
+        block = self._find_log_block(absolute_line)
+        if not block:
+            return
+        self._copy_block_to_clipboard(block, "Output block copied to clipboard.")
+
+    @on(Click, "#details")
+    def on_details_clicked(self, event: Click) -> None:
+        details = self.query_one("#details", Static)
+        if event.get_content_offset(details) is None:
+            return
+        if not self._details_text.strip():
+            return
+        self._copy_block_to_clipboard(self._details_text, "Details block copied to clipboard.")
 
     @on(Input.Changed, "#prompt")
     def on_input_changed(self, event: Input.Changed) -> None:
@@ -711,6 +743,36 @@ class GrahamApp(App[None]):
         prompt.value = value
         prompt.cursor_position = len(prompt.value)
 
+    def _register_log_block(
+        self,
+        content: str,
+        start_line: int,
+        end_line: int,
+        visible_start_line: int,
+    ) -> None:
+        if end_line <= start_line:
+            return
+        self._log_blocks.append((start_line, end_line, content))
+        self._log_blocks = [
+            block for block in self._log_blocks if block[1] > visible_start_line
+        ]
+
+    def _find_log_block(self, absolute_line: int) -> str | None:
+        for start_line, end_line, content in reversed(self._log_blocks):
+            if start_line <= absolute_line < end_line:
+                return content
+        if self._log_blocks:
+            return self._log_blocks[-1][2]
+        return None
+
+    def _copy_block_to_clipboard(self, content: str, success_message: str) -> None:
+        try:
+            self.copy_to_clipboard(content)
+        except Exception as exc:
+            self.notify(f"Clipboard copy failed: {exc}", severity="error")
+            return
+        self.notify(success_message, severity="information")
+
     def refresh_table(self) -> None:
         table = self.query_one("#ranking", DataTable)
         table.clear(columns=False)
@@ -865,7 +927,8 @@ class GrahamApp(App[None]):
             lines.append(self.tr("Notes:"))
             lines.extend(f"- {self.tr(note)}" for note in analysis.notes)
 
-        details.update("\n".join(lines))
+        self._details_text = "\n".join(lines)
+        details.update(self._details_text)
 
     def _schedule_price_refresh(self) -> None:
         asyncio.create_task(self._refresh_prices())
