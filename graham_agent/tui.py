@@ -152,10 +152,19 @@ class GrahamApp(App[None]):
         self.write_log("Welcome to graham. Type /help")
         self.write_log(f"Default universe: {default_spec}")
         self.write_log("Initial scan started in background...")
-        asyncio.create_task(self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds))
+        self.call_later(self._start_initial_scan)
 
     def on_resize(self, event: Resize) -> None:
         self._apply_responsive_layout()
+
+    def _start_initial_scan(self) -> None:
+        asyncio.create_task(self._run_initial_scan())
+
+    async def _run_initial_scan(self) -> None:
+        try:
+            await self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds)
+        except Exception as exc:
+            self.write_log(f"Initial scan error: {exc}")
 
     def tr(self, text: str) -> str:
         return self.i18n.tr(text)
@@ -479,6 +488,8 @@ class GrahamApp(App[None]):
         if self._current_results:
             first = self._current_results[0]
             self._show_details(first)
+        table.refresh(repaint=True, layout=True)
+        self.refresh(repaint=True, layout=True)
 
     def _show_details(self, analysis: StockAnalysis) -> None:
         self.selected_ticker = analysis.ticker

@@ -4,6 +4,29 @@ Benjamin Graham (1894-1976) is widely considered the father of value investing. 
 
 This project applies a practical, KISS version of Graham-style screening in a fullscreen terminal UI.
 
+Classical Graham-style rules:
+1. Adequate company size
+   - Avoid very small companies with fragile access to financing and limited reporting quality.
+   - In practice, this is often implemented with minimum revenue or market-cap thresholds.
+2. Strong financial condition
+   - Balance-sheet resilience is central: healthy liquidity and controlled leverage.
+   - Typical checks include current ratio, debt versus current assets, and debt service capacity.
+3. Earnings stability
+   - Prefer businesses with positive earnings over a long period, avoiding repeated deficits.
+   - Stability reduces downside risk and improves confidence in valuation inputs.
+4. Long dividend record
+   - Graham historically favored companies paying regular dividends for many years (often ~20 years).
+   - A long dividend history acts as a discipline signal for management and cash generation.
+5. Earnings growth
+   - Look for sustained, not one-off, profit growth over multi-year windows.
+   - CAGR-like approaches are commonly used to smooth noisy year-to-year moves.
+6. Moderate price/earnings ratio
+   - Classical references often mention a cap around 15x earnings.
+   - The spirit is paying a reasonable multiple, not maximum growth premiums.
+7. Moderate price/book ratio
+   - Classical references often mention a cap near 1.5x book value.
+   - Combined with P/E, this aims to avoid overpaying for low-quality balance sheets.
+
 Reference:
 - [Benjamin Graham formula](https://en.wikipedia.org/wiki/Benjamin_Graham_formula)
 
@@ -83,29 +106,6 @@ Score formula:
 5. P/E <= 9.0
 6. P/B < 1.20
 7. Dividends required by default (`dividendRate > 0`)
-
-Classical Graham-style rules (more detailed):
-1. Adequate company size
-   - Avoid very small companies with fragile access to financing and limited reporting quality.
-   - In practice, this is often implemented with minimum revenue or market-cap thresholds.
-2. Strong financial condition
-   - Balance-sheet resilience is central: healthy liquidity and controlled leverage.
-   - Typical checks include current ratio, debt versus current assets, and debt service capacity.
-3. Earnings stability
-   - Prefer businesses with positive earnings over a long period, avoiding repeated deficits.
-   - Stability reduces downside risk and improves confidence in valuation inputs.
-4. Long dividend record
-   - Graham historically favored companies paying regular dividends for many years (often ~20 years).
-   - A long dividend history acts as a discipline signal for management and cash generation.
-5. Earnings growth
-   - Look for sustained, not one-off, profit growth over multi-year windows.
-   - CAGR-like approaches are commonly used to smooth noisy year-to-year moves.
-6. Moderate price/earnings ratio
-   - Classical references often mention a cap around 15x earnings.
-   - The spirit is paying a reasonable multiple, not maximum growth premiums.
-7. Moderate price/book ratio
-   - Classical references often mention a cap near 1.5x book value.
-   - Combined with P/E, this aims to avoid overpaying for low-quality balance sheets.
 
 This app intentionally uses stricter default thresholds for criteria 5 and 6 (`P/E <= 9.0`, `P/B < 1.20`) to stay conservative.
 
