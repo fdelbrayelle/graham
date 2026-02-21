@@ -284,3 +284,7 @@ tests/
 ```bash
 pytest
 ```
+
+# 🚀 Releases
+
+Release process (GitHub + PyPI): see `RELEASING.md`.
