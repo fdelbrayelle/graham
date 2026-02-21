@@ -157,6 +157,10 @@ class GrahamApp(App[None]):
         self._current_results: list[StockAnalysis] = []
         self._suggestions: list[str] = []
         self._suggestion_index = 0
+        self._suppress_suggestions_once = False
+        self._prompt_history: list[str] = []
+        self._prompt_history_index: int | None = None
+        self._prompt_history_draft = ""
         self._refreshing = False
         self._timer = None
         self._universe_note = "sample"
@@ -464,6 +468,11 @@ class GrahamApp(App[None]):
 
     @on(Input.Changed, "#prompt")
     def on_input_changed(self, event: Input.Changed) -> None:
+        if self._suppress_suggestions_once:
+            self._suppress_suggestions_once = False
+            return
+        self._prompt_history_index = None
+        self._prompt_history_draft = ""
         self._suggestions = self.processor.suggestions(event.value)
         self._suggestion_index = 0
         self._render_suggestions()
@@ -485,6 +494,7 @@ class GrahamApp(App[None]):
         if not line:
             return
 
+        self._push_prompt_history(line)
         self.write_log(f"> {line}")
 
         if line.startswith("/"):
@@ -517,22 +527,32 @@ class GrahamApp(App[None]):
         prompt = self.query_one("#prompt", Input)
         if self.focused is not prompt:
             return
-        if not self._suggestions:
-            return
 
         if event.key == "down":
+            if not self._suggestions and self._history_next(prompt):
+                event.stop()
+                return
+            if not self._suggestions:
+                return
             self._suggestion_index = min(self._suggestion_index + 1, len(self._suggestions) - 1)
             self._sync_suggestion_cursor()
             event.stop()
             return
 
         if event.key == "up":
+            if not self._suggestions and self._history_prev(prompt):
+                event.stop()
+                return
+            if not self._suggestions:
+                return
             self._suggestion_index = max(self._suggestion_index - 1, 0)
             self._sync_suggestion_cursor()
             event.stop()
             return
 
         if event.key == "tab":
+            if not self._suggestions:
+                return
             self._apply_suggestion()
             event.stop()
             return
@@ -631,6 +651,48 @@ class GrahamApp(App[None]):
         prompt.cursor_position = len(prompt.value)
         self._hide_suggestions()
         self._suggestions = []
+
+    def _push_prompt_history(self, line: str) -> None:
+        value = line.strip()
+        if not value:
+            return
+        if self._prompt_history and self._prompt_history[-1] == value:
+            return
+        self._prompt_history.append(value)
+        if len(self._prompt_history) > 200:
+            self._prompt_history = self._prompt_history[-200:]
+        self._prompt_history_index = None
+        self._prompt_history_draft = ""
+
+    def _history_prev(self, prompt: Input) -> bool:
+        if not self._prompt_history:
+            return False
+        if self._prompt_history_index is None:
+            self._prompt_history_draft = prompt.value
+            self._prompt_history_index = len(self._prompt_history) - 1
+        elif self._prompt_history_index > 0:
+            self._prompt_history_index -= 1
+        self._set_prompt_value(self._prompt_history[self._prompt_history_index])
+        return True
+
+    def _history_next(self, prompt: Input) -> bool:
+        if self._prompt_history_index is None:
+            return False
+        if self._prompt_history_index < len(self._prompt_history) - 1:
+            self._prompt_history_index += 1
+            self._set_prompt_value(self._prompt_history[self._prompt_history_index])
+            return True
+        self._prompt_history_index = None
+        self._set_prompt_value(self._prompt_history_draft)
+        return True
+
+    def _set_prompt_value(self, value: str) -> None:
+        self._suppress_suggestions_once = True
+        self._suggestions = []
+        self._hide_suggestions()
+        prompt = self.query_one("#prompt", Input)
+        prompt.value = value
+        prompt.cursor_position = len(prompt.value)
 
     def refresh_table(self) -> None:
         table = self.query_one("#ranking", DataTable)

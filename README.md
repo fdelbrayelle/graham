@@ -163,7 +163,7 @@ Context-aware autocompletion in the input overlay:
 - `/moat` -> current universe tickers
 
 Keyboard:
-- `↑` `↓` move in suggestions
+- `↑` `↓` move in suggestions (or prompt history when no suggestion list is visible)
 - `TAB` complete
 - `ENTER` accept
 
