@@ -386,3 +386,35 @@ def test_fetch_index_tickers_uses_defeatbeta_provider_when_enabled(monkeypatch) 
     assert calls["create"] >= 1
     assert "defeatbeta" in note
     assert "AAPL" in values
+
+
+def test_fetch_index_tickers_falls_back_to_yfinance_when_defeatbeta_has_no_constituents(monkeypatch) -> None:
+    processor = _processor()
+    calls = {"defeatbeta": 0, "yfinance": 0}
+
+    monkeypatch.setattr(processor, "_fetch_public_index_constituents", lambda index_name: ([], "", {}))
+    monkeypatch.setattr(processor, "_fetch_nasdaq_constituents", lambda symbol: [])
+    monkeypatch.setattr(processor, "_fetch_ishares_holdings", lambda symbol: [])
+    monkeypatch.setattr("graham.commands.resolve_market_data_provider", lambda: "defeatbeta")
+
+    class EmptyTicker:
+        constituents: list[str] = []
+
+    class FullTicker:
+        constituents = ["AAPL", "MSFT"]
+
+    def fake_create_ticker(symbol: str, provider: str | None = None, yfinance_fallback: bool = True):
+        if provider == "defeatbeta":
+            calls["defeatbeta"] += 1
+            return EmptyTicker(), "defeatbeta"
+        calls["yfinance"] += 1
+        return FullTicker(), "yfinance"
+
+    monkeypatch.setattr("graham.commands.create_ticker", fake_create_ticker)
+
+    values, note, _ = processor._fetch_index_tickers("msci_world")
+
+    assert calls["defeatbeta"] >= 1
+    assert calls["yfinance"] >= 1
+    assert "AAPL" in values
+    assert "yfinance" in note

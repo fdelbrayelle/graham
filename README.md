@@ -90,9 +90,9 @@ The app uses one input box at the bottom:
 - free prompt mode (if a ticker is selected, it behaves like `/explain <ticker> "..."`)
 
 Market data provider (optional):
-- default: `defeatbeta-api`
-- override with: `GRAHAM_MARKET_DATA_PROVIDER=yfinance`
-- if `defeatbeta-api` is unavailable, the app falls back to `yfinance` automatically
+- default: `yfinance`
+- alternative: `defeatbeta-api` with `GRAHAM_MARKET_DATA_PROVIDER=defeatbeta`
+- if `defeatbeta-api` is unavailable or incomplete, the app falls back to `yfinance` automatically
 
 # ✅ Features
 

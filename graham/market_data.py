@@ -7,7 +7,7 @@ from typing import Any
 
 
 def resolve_market_data_provider() -> str:
-    value = os.getenv("GRAHAM_MARKET_DATA_PROVIDER", "defeatbeta").strip().lower()
+    value = os.getenv("GRAHAM_MARKET_DATA_PROVIDER", "yfinance").strip().lower()
     if value in {"defeatbeta", "defeatbeta-api", "defeatbeta_api"}:
         return "defeatbeta"
     return "yfinance"

@@ -605,6 +605,22 @@ def filter_ranked(
     return filtered
 
 
+def _analysis_is_sparse(analysis: StockAnalysis) -> bool:
+    metric_count = sum(
+        value is not None
+        for value in (
+            analysis.price,
+            analysis.intrinsic_value,
+            analysis.mos,
+            analysis.pe,
+            analysis.pb,
+            analysis.dividend_rate,
+        )
+    )
+    scored_criteria = sum(1 for criterion in analysis.criteria if criterion.status != NA)
+    return metric_count <= 1 and scored_criteria <= 1
+
+
 class GrahamEngine:
     def __init__(self, y: float = 4.4, require_dividend: bool = True) -> None:
         self.y = y
@@ -673,24 +689,45 @@ class GrahamEngine:
         def _scan_one(symbol: str) -> tuple[str, Any, StockAnalysis]:
             cached = self._fundamentals_cache_get(symbol)
             ticker = self._tickers.get(symbol)
+            source = "yfinance"
             if ticker is None and cached is None:
                 if provider == "defeatbeta":
                     try:
-                        ticker, _ = create_ticker(symbol, provider=provider, yfinance_fallback=True)
+                        ticker, source = create_ticker(symbol, provider=provider, yfinance_fallback=True)
                     except Exception:
                         if yfinance_module is None:
                             raise
                         ticker = yfinance_module.Ticker(symbol)
+                        source = "yfinance"
                 else:
                     if yfinance_module is None:
                         raise RuntimeError("yfinance unavailable.")
                     ticker = yfinance_module.Ticker(symbol)
+                    source = "yfinance"
             previous = self._analyses.get(symbol)
             if cached is not None:
                 analysis = cached
             else:
                 try:
                     analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
+                    if (
+                        source == "defeatbeta"
+                        and yfinance_module is not None
+                        and _analysis_is_sparse(analysis)
+                    ):
+                        try:
+                            fallback_ticker = yfinance_module.Ticker(symbol)
+                            fallback_analysis = analyze_symbol(
+                                symbol,
+                                fallback_ticker,
+                                y=self.y,
+                                require_dividend=self.require_dividend,
+                            )
+                            if not _analysis_is_sparse(fallback_analysis):
+                                ticker = fallback_ticker
+                                analysis = fallback_analysis
+                        except Exception:
+                            pass
                     self._fundamentals_cache_set(symbol, analysis)
                 except Exception as exc:
                     analysis = StockAnalysis(
