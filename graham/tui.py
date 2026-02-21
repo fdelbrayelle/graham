@@ -26,6 +26,7 @@ class DetailsPanel(Static):
 
 class GrahamApp(App[None]):
     TITLE = "graham"
+    SUGGESTION_MAX_VISIBLE = 8
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         Binding("ctrl+q", "noop", "", show=False, priority=True),
@@ -562,6 +563,12 @@ class GrahamApp(App[None]):
         if self.focused is not prompt:
             return
         history_active = self._prompt_history_index is not None
+        if not history_active and not self._suggestions and prompt.value.strip().startswith("/"):
+            regenerated = self.processor.suggestions(prompt.value)
+            if regenerated:
+                self._suggestions = regenerated
+                self._suggestion_index = 0
+                self._render_suggestions()
 
         if event.key == "down":
             if history_active:
@@ -627,12 +634,23 @@ class GrahamApp(App[None]):
     def _sync_suggestion_cursor(self) -> None:
         suggestion_view = self.query_one("#suggestions", Static)
         self._normalize_suggestion_index()
+        if not self._suggestions:
+            suggestion_view.update("")
+            return
+
+        max_visible = max(1, int(self.SUGGESTION_MAX_VISIBLE))
+        total = len(self._suggestions)
+        start = 0
+        if total > max_visible:
+            start = min(max(0, self._suggestion_index - max_visible + 1), total - max_visible)
+        end = min(total, start + max_visible)
+
         lines = []
-        for index, suggestion in enumerate(self._suggestions):
+        for index in range(start, end):
+            suggestion = self._suggestions[index]
             prefix = ">" if index == self._suggestion_index else " "
             lines.append(f"{prefix} {suggestion}")
         suggestion_view.update("\n".join(lines))
-        self._scroll_suggestion_cursor_into_view()
 
     def _normalize_suggestion_index(self) -> None:
         if not self._suggestions:
