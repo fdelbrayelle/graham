@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import csv
 import io
 import json
@@ -256,7 +257,19 @@ TOPIX_CONSTITUENTS_CSV_URL = (
     "https://www.jpx.co.jp/english/markets/indices/topix/tvdivq0000001vg2-att/topixweight_j.csv"
 )
 MEDIAWIKI_PARSE_API = "https://en.wikipedia.org/w/api.php"
+PUBLIC_CONSTITUENT_TARGETS: dict[str, int] = {
+    "sp500": 400,
+    "nasdaq100": 80,
+}
 INDEX_WIKIPEDIA_PAGES: dict[str, dict[str, Any]] = {
+    "sp500": {
+        "page": "List_of_S&P_500_companies",
+        "header_keywords": ("symbol", "ticker"),
+    },
+    "nasdaq100": {
+        "page": "Nasdaq-100",
+        "header_keywords": ("ticker", "symbol"),
+    },
     "dowjones": {
         "page": "Dow_Jones_Industrial_Average",
         "header_keywords": ("symbol", "ticker", "stock symbol"),
@@ -376,6 +389,8 @@ class CommandProcessor:
         self._ishares_screener_payload: dict[str, Any] | None = None
         self._api_cache_ttl_seconds = 3600
         self._api_cache: dict[str, tuple[float, Any]] = {}
+        self._index_cache_ttl_seconds = 900
+        self._index_constituents_cache: dict[str, tuple[float, tuple[list[str], str, dict[str, str]]]] = {}
 
     def suggestions(self, text: str) -> list[str]:
         value = text.strip()
@@ -960,10 +975,14 @@ class CommandProcessor:
         return None
 
     def _fetch_index_tickers(self, index_name: str) -> tuple[list[str], str, dict[str, str]]:
+        cached = self._index_cache_get(index_name)
+        if cached is not None:
+            return cached
+
         import yfinance as yf
 
         spec = INDEX_SPECS[index_name]
-        symbols = spec.get("symbols", [])
+        symbols = [str(item).strip() for item in spec.get("symbols", []) if str(item).strip()]
         found: list[str] = []
         found_set: set[str] = set()
         company_overrides: dict[str, str] = {}
@@ -980,37 +999,57 @@ class CommandProcessor:
             if normalized and normalized not in found_set:
                 found_set.add(normalized)
                 found.append(normalized)
+        target = PUBLIC_CONSTITUENT_TARGETS.get(index_name)
+        if target is not None and public_note and len(found) >= target:
+            note = f"index:{index_name} ({public_note})"
+            self._index_cache_set(index_name, found, note, company_overrides)
+            return found, note, company_overrides
 
-        for symbol in symbols:
+        def _fetch_symbol_sources(symbol: str) -> tuple[str, list[str], list[str]]:
+            values: list[str] = []
+            notes: list[str] = []
+
             if index_name.startswith("msci_"):
                 ishares_values = self._fetch_ishares_holdings(symbol)
                 if ishares_values:
-                    source_notes.append(f"ishares:{symbol}")
-                for item in ishares_values:
-                    normalized = self._normalize_ticker(item)
-                    if normalized and normalized not in found_set:
-                        found_set.add(normalized)
-                        found.append(normalized)
+                    notes.append(f"ishares:{symbol}")
+                    values.extend(ishares_values)
 
             nasdaq_values = self._fetch_nasdaq_constituents(symbol)
             if nasdaq_values:
-                source_notes.append(f"nasdaq:{symbol}")
-            for item in nasdaq_values:
-                normalized = self._normalize_ticker(item)
-                if normalized and normalized not in found_set:
-                    found_set.add(normalized)
-                    found.append(normalized)
+                notes.append(f"nasdaq:{symbol}")
+                values.extend(nasdaq_values)
 
             try:
                 ticker_obj = yf.Ticker(symbol)
             except Exception:
-                continue
+                return symbol, values, notes
 
             extracted = self._extract_tickers_from_any(getattr(ticker_obj, "constituents", None))
             if not extracted:
                 extracted = self._extract_tickers_from_funds_data(ticker_obj)
+            if extracted:
+                notes.append(f"yfinance:{symbol}")
+                values.extend(extracted)
+            return symbol, values, notes
 
-            for item in extracted:
+        per_symbol: dict[str, tuple[list[str], list[str]]] = {}
+        if symbols:
+            max_workers = min(6, max(1, len(symbols)))
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                future_map = {pool.submit(_fetch_symbol_sources, symbol): symbol for symbol in symbols}
+                for future in as_completed(future_map):
+                    symbol = future_map[future]
+                    try:
+                        _, values, notes = future.result()
+                    except Exception:
+                        values, notes = [], []
+                    per_symbol[symbol] = (values, notes)
+
+        for symbol in symbols:
+            values, notes = per_symbol.get(symbol, ([], []))
+            source_notes.extend(notes)
+            for item in values:
                 normalized = self._normalize_ticker(item)
                 if normalized and normalized not in found_set:
                     found_set.add(normalized)
@@ -1019,6 +1058,7 @@ class CommandProcessor:
         note = f"index:{index_name}"
         if source_notes:
             note = f"{note} ({', '.join(source_notes)})"
+        self._index_cache_set(index_name, found, note, company_overrides)
         return found, note, company_overrides
 
     def _fetch_public_index_constituents(self, index_name: str) -> tuple[list[str], str, dict[str, str]]:
@@ -1037,7 +1077,7 @@ class CommandProcessor:
                 return values, "jpx:topix", names
             return [], "", {}
 
-        if index_name in {"cac40", "dax40", "dowjones", "eurostoxx"}:
+        if index_name in {"sp500", "nasdaq100", "cac40", "dax40", "dowjones", "eurostoxx"}:
             values, names = self._fetch_wikipedia_components_with_names(index_name)
             if values:
                 return values, f"wikipedia:{index_name}", names
@@ -1564,6 +1604,24 @@ class CommandProcessor:
     def _api_cache_key(self, kind: str, url: str, headers: dict[str, str]) -> str:
         items = tuple(sorted((str(key).lower(), str(value)) for key, value in headers.items()))
         return f"{kind}|{url}|{items!r}"
+
+    def _index_cache_get(self, index_name: str) -> tuple[list[str], str, dict[str, str]] | None:
+        entry = self._index_constituents_cache.get(index_name)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if time.time() >= expires_at:
+            self._index_constituents_cache.pop(index_name, None)
+            return None
+        tickers, note, overrides = payload
+        return list(tickers), note, dict(overrides)
+
+    def _index_cache_set(self, index_name: str, tickers: list[str], note: str, overrides: dict[str, str]) -> None:
+        payload = (list(tickers), note, dict(overrides))
+        self._index_constituents_cache[index_name] = (
+            time.time() + float(self._index_cache_ttl_seconds),
+            payload,
+        )
 
     def _api_cache_get(self, key: str) -> Any:
         entry = self._api_cache.get(key)
