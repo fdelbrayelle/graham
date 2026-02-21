@@ -1027,10 +1027,25 @@ class CommandProcessor:
             notes.append(f"{source}:{symbol}")
 
             extracted = self._extract_tickers_from_any(getattr(ticker_obj, "constituents", None))
+            extract_source = source
             if not extracted:
                 extracted = self._extract_tickers_from_funds_data(ticker_obj)
+            if not extracted and source == "defeatbeta":
+                try:
+                    fallback_ticker, fallback_source = create_ticker(
+                        symbol,
+                        provider="yfinance",
+                        yfinance_fallback=True,
+                    )
+                    extracted = self._extract_tickers_from_any(getattr(fallback_ticker, "constituents", None))
+                    if not extracted:
+                        extracted = self._extract_tickers_from_funds_data(fallback_ticker)
+                    if extracted:
+                        extract_source = fallback_source
+                except Exception:
+                    pass
             if extracted:
-                notes.append(f"yfinance:{symbol}")
+                notes.append(f"{extract_source}:{symbol}")
                 values.extend(extracted)
             return symbol, values, notes
 

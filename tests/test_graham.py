@@ -238,3 +238,54 @@ def test_scan_fundamentals_uses_defeatbeta_provider_when_enabled(monkeypatch) ->
 
     assert len(ranked) == 1
     assert calls["create"] == 1
+
+
+def test_scan_fundamentals_falls_back_to_yfinance_when_defeatbeta_is_sparse(monkeypatch) -> None:
+    import graham.graham as graham_module
+
+    engine = GrahamEngine()
+    engine.set_universe(["AAPL"])
+    calls = {"create": 0, "yf": 0}
+
+    class DefeatTicker:
+        pass
+
+    class YFTicker:
+        pass
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> YFTicker:
+            calls["yf"] += 1
+            return YFTicker()
+
+    def fake_create_ticker(symbol: str, provider: str | None = None, yfinance_fallback: bool = True):
+        calls["create"] += 1
+        return DefeatTicker(), "defeatbeta"
+
+    def fake_analyze(symbol: str, ticker: object, y: float, require_dividend: bool) -> StockAnalysis:
+        if isinstance(ticker, DefeatTicker):
+            return StockAnalysis(ticker=symbol, company_name=symbol, score=0.1, criteria=[])
+        return StockAnalysis(
+            ticker=symbol,
+            company_name="Apple Inc",
+            score=0.7,
+            price=120.0,
+            pe=10.0,
+            criteria=[CriterionResult(index=1, label="c1", status=PASS, note="ok")],
+        )
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_cache", lambda yf_module: None)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_logging", lambda: None)
+    monkeypatch.setattr(graham_module, "resolve_market_data_provider", lambda: "defeatbeta")
+    monkeypatch.setattr(graham_module, "create_ticker", fake_create_ticker)
+    monkeypatch.setattr(graham_module, "analyze_symbol", fake_analyze)
+
+    ranked = engine.scan_fundamentals()
+
+    assert len(ranked) == 1
+    assert calls["create"] == 1
+    assert calls["yf"] >= 1
+    assert ranked[0].company_name == "Apple Inc"
+    assert ranked[0].score == 0.7

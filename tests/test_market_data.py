@@ -8,7 +8,7 @@ from graham.market_data import DefeatBetaTickerAdapter, create_ticker, resolve_m
 
 def test_resolve_market_data_provider_aliases(monkeypatch) -> None:
     monkeypatch.delenv("GRAHAM_MARKET_DATA_PROVIDER", raising=False)
-    assert resolve_market_data_provider() == "defeatbeta"
+    assert resolve_market_data_provider() == "yfinance"
     monkeypatch.setenv("GRAHAM_MARKET_DATA_PROVIDER", "defeatbeta-api")
     assert resolve_market_data_provider() == "defeatbeta"
     monkeypatch.setenv("GRAHAM_MARKET_DATA_PROVIDER", "yfinance")
