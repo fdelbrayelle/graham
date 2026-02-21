@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from rich.markdown import Markdown
 from textual import on
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -308,14 +309,17 @@ class GrahamApp(App[None]):
             f"Rating thresholds updated: green>={green:.2f}, orange>={orange:.2f}, red<{orange:.2f}"
         )
 
-    def write_log(self, message: str, translate: bool = True) -> None:
+    def write_log(self, message: str, translate: bool = True, markdown: bool = False) -> None:
         logger = self._query_log()
         if logger is None:
             return
         rendered = self.tr(message) if translate else message
         before_start = int(getattr(logger, "_start_line", 0))
         before_len = len(logger.lines)
-        logger.write(rendered)
+        if markdown:
+            logger.write(Markdown(rendered))
+        else:
+            logger.write(rendered)
         after_start = int(getattr(logger, "_start_line", 0))
         after_len = len(logger.lines)
         self._register_log_block(rendered, before_start + before_len, after_start + after_len, after_start)
@@ -456,7 +460,8 @@ class GrahamApp(App[None]):
             self.write_log(f"LLM error: {exc}")
             return self.tr("LLM error while generating moat analysis.")
 
-        self.write_log(f"[LLM {self.model} /moat {symbol}]\n{response}", translate=False)
+        self.write_log(f"[LLM {self.model} /moat {symbol}]", translate=False)
+        self.write_log(response, translate=False, markdown=True)
         return self.tr("LLM moat analysis written to log.")
 
     def export_results(self, export_format: str) -> str:

@@ -89,6 +89,18 @@ The app uses one input box at the bottom:
 - slash commands (`/help`, `/scan`, ...)
 - free prompt mode (if a ticker is selected, it behaves like `/explain <ticker> "..."`)
 
+# ✅ Features
+
+- Stock screener with ranking, details, and live output log.
+- Graham-style scoring with intrinsic value (`V`) and margin of safety (`MoS`).
+- Dynamic universes and index loaders (`/universe`, `/indices`) with persisted defaults.
+- Real-time price refresh with sortable table (`score`, `price`, `as_of`, `MoS`, `P/E`, ...).
+- Rich command UX: autocompletion, prompt history, keyboard shortcuts, quick ticker/company search.
+- Economic moat analysis via `/moat TICKER` with model-aware prompts and Markdown-rendered output.
+- Optional LLM workflows for `/explain` and `/moat` with deterministic fallback when unavailable.
+- Multi-language display support (`/lang`) persisted in `~/.graham/config.json`.
+- Export scan results to `csv` or `json`.
+
 # 📊 Product Flow
 
 Pipeline:
