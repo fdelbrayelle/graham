@@ -561,8 +561,14 @@ class GrahamApp(App[None]):
         prompt = self.query_one("#prompt", Input)
         if self.focused is not prompt:
             return
+        history_active = self._prompt_history_index is not None
 
         if event.key == "down":
+            if history_active:
+                self._history_next(prompt)
+                event.prevent_default()
+                event.stop()
+                return
             if not self._suggestions and self._history_next(prompt):
                 event.prevent_default()
                 event.stop()
@@ -577,6 +583,11 @@ class GrahamApp(App[None]):
             return
 
         if event.key == "up":
+            if history_active:
+                self._history_prev(prompt)
+                event.prevent_default()
+                event.stop()
+                return
             if not self._suggestions and self._history_prev(prompt):
                 event.prevent_default()
                 event.stop()
