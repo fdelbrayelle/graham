@@ -6,10 +6,35 @@ from pathlib import Path
 from graham_agent.i18n import COMMON_LANGUAGE_CODES
 
 DEFAULT_SAMPLE = ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"]
+UNIVERSE_ALIASES = {
+    "monde": "world",
+    "world": "world",
+    "usa": "usa",
+    "us": "usa",
+    "etats-unis": "usa",
+    "emerging": "emerging_markets",
+    "emerging_markets": "emerging_markets",
+    "emerging-markets": "emerging_markets",
+    "europe": "europe",
+    "france": "france",
+    "japan": "japan",
+    "japon": "japan",
+}
 
 
 class CommandProcessor:
-    COMMANDS = ["/help", "/lang", "/model", "/universe", "/scan", "/screen", "/explain", "/rating", "/export"]
+    COMMANDS = [
+        "/help",
+        "/lang",
+        "/model",
+        "/universe",
+        "/default-universe",
+        "/scan",
+        "/screen",
+        "/explain",
+        "/rating",
+        "/export",
+    ]
     MODELS = ["none", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"]
     SCAN_OPTIONS = ["--top", "--min-score", "--refresh"]
     EXPORT_FORMATS = ["csv", "json"]
@@ -45,7 +70,22 @@ class CommandProcessor:
             return [code for code in self.LANGUAGE_CODES if code.startswith(current.lower())]
 
         if cmd == "/universe":
-            base = ["sample", "sp500", "cac40", "custom:./universes/sample.txt"]
+            base = [
+                "sample",
+                "world",
+                "usa",
+                "emerging_markets",
+                "europe",
+                "france",
+                "japan",
+                "custom:./universes/sample.txt",
+            ]
+            base.extend(self.app.available_universes())
+            merged = sorted(set(base))
+            return [name for name in merged if name.startswith(current)]
+
+        if cmd == "/default-universe":
+            base = ["sample", "world", "usa", "emerging_markets", "europe", "france", "japan"]
             base.extend(self.app.available_universes())
             merged = sorted(set(base))
             return [name for name in merged if name.startswith(current)]
@@ -99,7 +139,9 @@ class CommandProcessor:
 
         if command == "/universe":
             if not args:
-                return self._t("Usage: /universe [sample|sp500|cac40|custom:path]")
+                return self._t(
+                    "Usage: /universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]"
+                )
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
                 return self._t(f"Empty universe. {note}")
@@ -121,6 +163,22 @@ class CommandProcessor:
                 f"top={options['top'] or 'all'}, min_score={options['min_score']:.2f}, "
                 f"refresh={self.app.refresh_seconds}s"
             )
+
+        if command == "/default-universe":
+            if not args:
+                return self._t(
+                    f"Current default universe: {self.app.get_default_universe()}. "
+                    "Usage: /default-universe [name|custom:path]"
+                )
+            success, message = self.app.set_default_universe(args[0])
+            if not success:
+                return self._t(message)
+            await self.app.run_scan(
+                top=self.app.scan_top,
+                min_score=self.app.scan_min_score,
+                refresh=self.app.refresh_seconds,
+            )
+            return self._t(message)
 
         if command == "/screen":
             if not args:
@@ -184,7 +242,8 @@ class CommandProcessor:
             "/help\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
-            "/universe [sample|sp500|cac40|custom:path]\n"
+            "/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]\n"
+            "/default-universe [name|custom:path]\n"
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
@@ -239,19 +298,21 @@ class CommandProcessor:
         return {"top": top, "min_score": min_score, "refresh": refresh}
 
     def resolve_universe(self, spec: str) -> tuple[list[str], str]:
+        normalized = UNIVERSE_ALIASES.get(spec.strip().lower(), spec.strip().lower())
+
         if spec.startswith("custom:"):
             custom_path = spec.split(":", 1)[1]
             return self._read_universe_file(Path(custom_path)), f"custom:{custom_path}"
 
         root = Path(__file__).resolve().parent.parent
-        universe_file = root / "universes" / f"{spec}.txt"
+        universe_file = root / "universes" / f"{normalized}.txt"
         if universe_file.exists():
-            return self._read_universe_file(universe_file), spec
+            return self._read_universe_file(universe_file), normalized
 
-        if spec == "sample":
+        if normalized == "sample":
             return DEFAULT_SAMPLE, "sample (builtin)"
 
-        return [], self._t(f"File universes/{spec}.txt not found")
+        return [], self._t(f"File universes/{normalized}.txt not found")
 
     def _read_universe_file(self, path: Path) -> list[str]:
         try:

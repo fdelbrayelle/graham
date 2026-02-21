@@ -100,6 +100,7 @@ Robustness policy:
 - `/lang [language-code]`
 - `/model [none|model-name]`
 - `/universe [sample|sp500|cac40|custom:path]`
+- `/default-universe [name|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
 - `/explain [TICKER] [optional question]`
@@ -168,6 +169,25 @@ You can also pass percentages:
 ```text
 /rating 80 60
 ```
+
+# 🌐 Universe Presets
+
+Available universe files now include:
+- `sample`
+- `world`
+- `usa`
+- `emerging_markets`
+- `europe`
+- `france`
+- `japan`
+
+Set and persist your default universe:
+
+```text
+/default-universe world
+```
+
+This preference is saved in `~/.graham/config.json` and automatically reused on next launch.
 
 # 🗂️ Project Structure
 

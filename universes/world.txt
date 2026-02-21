@@ -1,0 +1,13 @@
+# World large caps and global leaders
+AAPL
+MSFT
+NVDA
+ASML
+NVO
+SHEL
+TTE
+TM
+SONY
+TSM
+SAP
+BABA

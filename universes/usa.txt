@@ -1,0 +1,16 @@
+# USA large caps
+AAPL
+MSFT
+NVDA
+AMZN
+GOOGL
+META
+BRK-B
+JPM
+JNJ
+PG
+XOM
+PEP
+KO
+HD
+UNH

@@ -1,0 +1,13 @@
+# Europe large caps
+ASML
+NVO
+SAP
+SHEL
+TTE
+SNY
+AZN
+UL
+BP
+RHHBY
+NESN.SW
+MC.PA

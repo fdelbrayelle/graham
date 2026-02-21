@@ -129,10 +129,20 @@ class GrahamApp(App[None]):
     async def on_mount(self) -> None:
         self._setup_table_columns()
 
-        tickers, note = self.processor.resolve_universe("sample")
+        default_spec = self.settings.default_universe or "sample"
+        tickers, note = self.processor.resolve_universe(default_spec)
+        if not tickers:
+            default_spec = "sample"
+            tickers, note = self.processor.resolve_universe(default_spec)
+            self.settings.default_universe = default_spec
+            try:
+                save_user_settings(self.settings)
+            except Exception:
+                pass
         self.set_universe(tickers, note)
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
         self.write_log("Welcome to graham. Type /help")
+        self.write_log(f"Default universe: {default_spec}")
         self.write_log("Initial scan started in background...")
         asyncio.create_task(self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds))
 
@@ -181,6 +191,23 @@ class GrahamApp(App[None]):
     def write_log(self, message: str, translate: bool = True) -> None:
         logger = self.query_one("#log", RichLog)
         logger.write(self.tr(message) if translate else message)
+
+    def get_default_universe(self) -> str:
+        return self.settings.default_universe
+
+    def set_default_universe(self, spec: str) -> tuple[bool, str]:
+        tickers, note = self.processor.resolve_universe(spec)
+        if not tickers:
+            return False, f"Cannot set default universe. {note}"
+
+        self.settings.default_universe = spec
+        try:
+            save_user_settings(self.settings)
+        except Exception as exc:
+            return False, f"Default universe updated in memory but persistence failed: {exc}"
+
+        self.set_universe(tickers, note)
+        return True, f"Default universe set to: {spec} ({len(tickers)} tickers)"
 
     def available_universes(self) -> list[str]:
         return discover_universe_names()

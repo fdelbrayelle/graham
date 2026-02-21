@@ -1,0 +1,13 @@
+# France CAC40 style selection
+MC.PA
+OR.PA
+SAN.PA
+AI.PA
+BNP.PA
+ENGI.PA
+SU.PA
+DG.PA
+CAP.PA
+CS.PA
+KER.PA
+VIE.PA
