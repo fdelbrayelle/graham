@@ -62,21 +62,18 @@ class GrahamApp(App[None]):
         overflow: auto;
     }
 
-    #status {
-        dock: bottom;
-        height: 1;
-        padding: 0 1;
-    }
-
     #input-wrap {
         dock: bottom;
         height: auto;
         min-height: 3;
-        padding: 0;
+        margin-top: 1;
+        padding: 0 1;
+        border: round #1d3557;
     }
 
     #prompt {
         width: 100%;
+        margin: 0;
     }
 
     #suggestions {
@@ -145,7 +142,6 @@ class GrahamApp(App[None]):
             yield DataTable(id="ranking")
             yield Static(self.tr("No row selected."), id="details")
         yield RichLog(id="log", markup=False, wrap=True)
-        yield Static("", id="status")
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
             yield Static("", id="suggestions")
@@ -585,7 +581,7 @@ class GrahamApp(App[None]):
 
     def _set_scan_loading(self, loading: bool) -> None:
         self._scan_loading = loading
-        status = self.query_one("#status", Static)
+        logger = self.query_one("#log", RichLog)
         if not loading:
             if self._scan_spinner_timer is not None:
                 try:
@@ -593,7 +589,7 @@ class GrahamApp(App[None]):
                 except Exception:
                     pass
                 self._scan_spinner_timer = None
-            status.update("")
+            logger.border_title = ""
             return
 
         self._scan_spinner_step = 0
@@ -604,10 +600,10 @@ class GrahamApp(App[None]):
     def _tick_scan_spinner(self) -> None:
         if not self._scan_loading:
             return
-        status = self.query_one("#status", Static)
+        logger = self.query_one("#log", RichLog)
         spinner = self._scan_spinner_frames[self._scan_spinner_step % len(self._scan_spinner_frames)]
         self._scan_spinner_step += 1
-        status.update(f"{spinner} {self.tr('Loading tickers...')}")
+        logger.border_title = f"{spinner} {self.tr('Loading tickers...')}"
 
     def _reset_timer(self) -> None:
         if self._timer is not None:
