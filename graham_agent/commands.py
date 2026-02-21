@@ -135,6 +135,18 @@ class CommandProcessor:
         return f"Unknown command: {command}. Type /help"
 
     def help_text(self) -> str:
+        if self.app.model == "none":
+            model_note = (
+                "Model mode: none (deterministic). Explanations are generated locally from yfinance data.\n"
+                "No LLM call is made while model is set to none."
+            )
+        else:
+            model_note = (
+                f"Model mode: {self.app.model} (LLM enabled).\n"
+                "The app uses yfinance for screening data and uses the configured LLM for /explain.\n"
+                "If the LLM call fails, the app falls back to a deterministic local explanation."
+            )
+
         return (
             "Available commands:\n"
             "/help\n"
@@ -143,7 +155,8 @@ class CommandProcessor:
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
-            "/export [csv|json]"
+            "/export [csv|json]\n\n"
+            + model_note
         )
 
     def parse_scan_options(self, args: list[str]) -> dict[str, float | int | None] | str:
