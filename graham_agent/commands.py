@@ -6,7 +6,24 @@ from pathlib import Path
 
 from graham_agent.i18n import COMMON_LANGUAGE_CODES
 
-DEFAULT_SAMPLE = ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"]
+UNIVERSE_PRESETS: dict[str, list[str]] = {
+    "sample": ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"],
+    "world": ["AAPL", "MSFT", "NVDA", "ASML", "NVO", "SHEL", "TTE", "TM", "SONY", "TSM", "SAP", "BABA"],
+    "usa": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "BRK-B", "JPM", "JNJ", "PG", "XOM", "PEP", "KO", "HD", "UNH"],
+    "emerging_markets": ["TSM", "BABA", "PDD", "MELI", "INFY", "VALE", "NU", "ITUB", "HDB", "NIO", "JD", "BIDU"],
+    "europe": ["ASML", "NVO", "SAP", "SHEL", "TTE", "SNY", "AZN", "UL", "BP", "RHHBY", "NESN.SW", "MC.PA"],
+    "france": ["MC.PA", "OR.PA", "SAN.PA", "AI.PA", "BNP.PA", "ENGI.PA", "SU.PA", "DG.PA", "CAP.PA", "CS.PA", "KER.PA", "VIE.PA"],
+    "japan": ["7203.T", "6758.T", "9984.T", "8035.T", "6501.T", "6861.T", "9432.T", "8306.T", "6098.T", "7974.T", "6367.T", "9433.T"],
+}
+UNIVERSE_PRESET_DESCRIPTIONS: dict[str, str] = {
+    "sample": "KISS sample universe",
+    "world": "World large caps and global leaders",
+    "usa": "USA large caps",
+    "emerging_markets": "Emerging markets mix",
+    "europe": "Europe large caps",
+    "france": "France CAC40 style selection",
+    "japan": "Japan large caps",
+}
 UNIVERSE_ALIASES = {
     "monde": "world",
     "world": "world",
@@ -21,6 +38,32 @@ UNIVERSE_ALIASES = {
     "japan": "japan",
     "japon": "japan",
 }
+
+
+def universe_search_dirs() -> list[Path]:
+    candidates = [
+        Path.cwd() / "universes",
+        Path.home() / ".graham" / "universes",
+        Path(__file__).resolve().parent.parent / "universes",
+    ]
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        key = str(candidate.resolve()) if candidate.exists() else str(candidate.absolute())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def find_universe_file(name: str) -> Path | None:
+    filename = f"{name}.txt"
+    for base in universe_search_dirs():
+        path = base / filename
+        if path.exists():
+            return path
+    return None
 
 
 class CommandProcessor:
@@ -296,18 +339,23 @@ class CommandProcessor:
         )
 
     def list_universes_text(self) -> str:
-        root = Path(__file__).resolve().parent.parent
-        universe_dir = root / "universes"
-        if not universe_dir.exists():
-            return self._t("No universes directory found.")
-
         default_universe_raw = str(getattr(self.app, "get_default_universe", lambda: "sample")())
-        default_universe = UNIVERSE_ALIASES.get(default_universe_raw.strip().lower(), default_universe_raw.strip().lower())
+        default_universe = UNIVERSE_ALIASES.get(
+            default_universe_raw.strip().lower(), default_universe_raw.strip().lower()
+        )
+
+        names = discover_universe_names()
+        if not names:
+            return self._t("No universes found.")
 
         lines = [self._t("Available universes:")]
-        for name in discover_universe_names():
-            path = universe_dir / f"{name}.txt"
-            description, count = self._read_universe_metadata(path)
+        for name in names:
+            path = find_universe_file(name)
+            if path is not None:
+                description, count = self._read_universe_metadata(path)
+            else:
+                description = UNIVERSE_PRESET_DESCRIPTIONS.get(name, "No description")
+                count = len(UNIVERSE_PRESETS.get(name, []))
             marker = "★" if name == default_universe else " "
             lines.append(f"{marker} {name:<18} ({count:>3} tickers) - {self._t(description)}")
 
@@ -378,13 +426,13 @@ class CommandProcessor:
             custom_path = spec.split(":", 1)[1]
             return self._read_universe_file(Path(custom_path)), f"custom:{custom_path}"
 
-        root = Path(__file__).resolve().parent.parent
-        universe_file = root / "universes" / f"{normalized}.txt"
-        if universe_file.exists():
+        universe_file = find_universe_file(normalized)
+        if universe_file is not None:
             return self._read_universe_file(universe_file), normalized
 
-        if normalized == "sample":
-            return DEFAULT_SAMPLE, "sample (builtin)"
+        preset = UNIVERSE_PRESETS.get(normalized)
+        if preset is not None:
+            return preset, f"{normalized} (builtin preset)"
 
         return [], self._t(f"File universes/{normalized}.txt not found")
 
@@ -464,8 +512,9 @@ class CommandProcessor:
 
 
 def discover_universe_names() -> list[str]:
-    root = Path(__file__).resolve().parent.parent
-    base = root / "universes"
-    if not base.exists():
-        return []
-    return sorted(path.stem for path in base.glob("*.txt"))
+    names: set[str] = set(UNIVERSE_PRESETS.keys())
+    for base in universe_search_dirs():
+        if not base.exists():
+            continue
+        names.update(path.stem for path in base.glob("*.txt"))
+    return sorted(names)
