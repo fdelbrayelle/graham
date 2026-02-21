@@ -32,44 +32,46 @@ class GrahamApp(App[None]):
     }
 
     #center {
-        height: auto;
-        min-height: 8;
-        max-height: 14;
+        height: 1fr;
+        min-height: 6;
     }
 
     #ranking {
-        width: 1fr;
-        min-height: 8;
-        height: auto;
+        width: 2fr;
+        min-height: 6;
+        height: 1fr;
         border: round #4c956c;
         overflow: auto;
     }
 
     #details {
-        width: 36;
-        min-width: 26;
-        max-width: 42;
-        height: auto;
-        max-height: 14;
+        width: 1fr;
+        min-width: 24;
+        height: 1fr;
         border: round #bc4749;
         padding: 1 1;
         overflow-y: auto;
     }
 
     #log {
-        height: 1fr;
-        min-height: 3;
+        dock: bottom;
+        height: 8;
+        min-height: 4;
         max-height: 10;
         border: round #386641;
+        overflow: auto;
     }
 
     #status {
+        dock: bottom;
         height: 1;
         padding: 0 1;
     }
 
     #input-wrap {
+        dock: bottom;
         height: auto;
+        min-height: 3;
         padding: 0;
     }
 
@@ -79,7 +81,7 @@ class GrahamApp(App[None]):
 
     #suggestions {
         display: none;
-        max-height: 8;
+        max-height: 3;
         border: round #6a994e;
     }
 
@@ -89,22 +91,22 @@ class GrahamApp(App[None]):
 
     #center.narrow {
         layout: vertical;
-        max-height: 16;
     }
 
     #ranking.narrow {
         width: 1fr;
-        height: auto;
+        height: 1fr;
     }
 
     #details.narrow {
         width: 1fr;
         min-width: 0;
-        max-height: 8;
+        height: 1fr;
     }
 
     #log.narrow {
-        min-height: 3;
+        height: 6;
+        min-height: 4;
         max-height: 8;
     }
     """
