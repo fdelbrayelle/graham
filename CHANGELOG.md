@@ -6,6 +6,15 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-02-21
+
+### Changed
+- `/explain` LLM responses are now rendered as Markdown in the output panel, matching `/moat` readability.
+- LLM output handling now auto-scrolls the output panel to the start of the newly generated Markdown block.
+
+### Added
+- Regression tests for `/explain` and `/moat` Markdown rendering and scroll targeting in the TUI.
+
 ## [0.3.2] - 2026-02-21
 
 ### Added

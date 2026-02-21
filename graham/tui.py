@@ -190,6 +190,7 @@ class GrahamApp(App[None]):
         self._ticker_search_mode = False
         self._ticker_search_query = ""
         self._ticker_search_draft = ""
+        self._pending_log_scroll_absolute_line: int | None = None
         self.score_green_min = self.settings.score_green_min
         self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
@@ -309,10 +310,12 @@ class GrahamApp(App[None]):
             f"Rating thresholds updated: green>={green:.2f}, orange>={orange:.2f}, red<{orange:.2f}"
         )
 
-    def write_log(self, message: str, translate: bool = True, markdown: bool = False) -> None:
+    def write_log(
+        self, message: str, translate: bool = True, markdown: bool = False
+    ) -> tuple[int, int] | None:
         logger = self._query_log()
         if logger is None:
-            return
+            return None
         rendered = self.tr(message) if translate else message
         before_start = int(getattr(logger, "_start_line", 0))
         before_len = len(logger.lines)
@@ -322,7 +325,10 @@ class GrahamApp(App[None]):
             logger.write(rendered)
         after_start = int(getattr(logger, "_start_line", 0))
         after_len = len(logger.lines)
-        self._register_log_block(rendered, before_start + before_len, after_start + after_len, after_start)
+        start_line = before_start + before_len
+        end_line = after_start + after_len
+        self._register_log_block(rendered, start_line, end_line, after_start)
+        return start_line, end_line
 
     def _query_log(self) -> RichLog | None:
         try:
@@ -419,7 +425,10 @@ class GrahamApp(App[None]):
             )
             try:
                 response = await asyncio.to_thread(ask_model, self.model, system_prompt, user_prompt)
-                self.write_log(f"[LLM {self.model}]\n{response}", translate=False)
+                self.write_log(f"[LLM {self.model} /explain {analysis.ticker}]", translate=False)
+                llm_block = self.write_log(response, translate=False, markdown=True)
+                if llm_block is not None:
+                    self._queue_log_scroll_to_absolute_line(llm_block[0])
                 return self.tr("LLM explanation written to log.")
             except LLMError as exc:
                 fallback = fallback_explanation(
@@ -461,7 +470,9 @@ class GrahamApp(App[None]):
             return self.tr("LLM error while generating moat analysis.")
 
         self.write_log(f"[LLM {self.model} /moat {symbol}]", translate=False)
-        self.write_log(response, translate=False, markdown=True)
+        llm_block = self.write_log(response, translate=False, markdown=True)
+        if llm_block is not None:
+            self._queue_log_scroll_to_absolute_line(llm_block[0])
         return self.tr("LLM moat analysis written to log.")
 
     def export_results(self, export_format: str) -> str:
@@ -627,11 +638,13 @@ class GrahamApp(App[None]):
                 if result_feedback is not None:
                     message, severity = result_feedback
                     self.notify(message, severity=severity)
+            self._apply_pending_log_scroll()
             return
 
         if self.selected_ticker:
             response = await self.explain_ticker(self.selected_ticker, line)
             self.write_log(response, translate=False)
+            self._apply_pending_log_scroll()
             return
 
         self.write_log("No ticker selected. Type /help")
@@ -781,7 +794,7 @@ class GrahamApp(App[None]):
 
         self._scroll_widget_to(suggestion_view, max(0, target_top))
 
-    def _scroll_widget_to(self, widget: Static, y: int) -> None:
+    def _scroll_widget_to(self, widget: Static | RichLog, y: int) -> None:
         try:
             widget.scroll_to(y=y, animate=False)
             return
@@ -805,6 +818,24 @@ class GrahamApp(App[None]):
             widget.scroll_relative(y=delta)
         except Exception:
             return
+
+    def _queue_log_scroll_to_absolute_line(self, absolute_line: int) -> None:
+        self._pending_log_scroll_absolute_line = max(0, int(absolute_line))
+
+    def _apply_pending_log_scroll(self) -> None:
+        if self._pending_log_scroll_absolute_line is None:
+            return
+        target_line = self._pending_log_scroll_absolute_line
+        self._pending_log_scroll_absolute_line = None
+        self._scroll_log_to_absolute_line(target_line)
+
+    def _scroll_log_to_absolute_line(self, absolute_line: int) -> None:
+        logger = self._query_log()
+        if logger is None:
+            return
+        visible_start = int(getattr(logger, "_start_line", 0))
+        relative_y = max(0, int(absolute_line) - visible_start)
+        self._scroll_widget_to(logger, relative_y)
 
     def _apply_suggestion(self) -> None:
         if not self._suggestions:
