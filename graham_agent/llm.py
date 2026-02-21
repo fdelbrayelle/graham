@@ -28,10 +28,10 @@ def ask_model(model: str, system_prompt: str, user_prompt: str, timeout: int = 2
     try:
         content = response.choices[0].message.content
     except Exception as exc:
-        raise LLMError(f"Reponse LLM invalide: {exc}") from exc
+        raise LLMError(f"Invalid LLM response: {exc}") from exc
 
     if not content:
-        raise LLMError("Reponse LLM vide.")
+        raise LLMError("Empty LLM response.")
 
     return str(content)
 
@@ -45,13 +45,13 @@ def fallback_explanation(
 ) -> str:
     mos_txt = "N/A" if mos is None else f"{mos * 100:.2f}%"
     lines = [
-        f"Analyse deterministe {ticker}",
-        f"Score Graham: {score * 100:.1f}%",
+        f"Deterministic analysis for {ticker}",
+        f"Graham score: {score * 100:.1f}%",
         f"Margin of Safety: {mos_txt}",
-        "Criteres:",
+        "Criteria:",
         *criteria_lines,
     ]
     if question:
         lines.append(f"Question: {question}")
-        lines.append("Reponse: utilisez /model <nom> pour une explication LLM plus riche.")
+        lines.append("Answer: use /model <name> for a richer LLM explanation.")
     return "\n".join(lines)

@@ -7,13 +7,13 @@ from graham_agent.tui import run_tui
 cli = typer.Typer(
     add_completion=False,
     no_args_is_help=False,
-    help="graham: TUI fullscreen KISS pour scanner des actions.",
+    help="graham: KISS fullscreen TUI to scan stocks.",
 )
 
 
 @cli.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
-    """Lance la TUI graham."""
+    """Launch the graham TUI."""
     if ctx.invoked_subcommand is None:
         run_tui()
 

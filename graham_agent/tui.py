@@ -86,10 +86,10 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield Static("Aucune ligne selectionnee.", id="details")
+            yield Static("No row selected.", id="details")
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
-            yield Input(placeholder="Tape /help", id="prompt")
+            yield Input(placeholder="Type /help", id="prompt")
             yield Static("", id="suggestions")
         yield Footer()
 
@@ -103,7 +103,7 @@ class GrahamApp(App[None]):
         await self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds)
 
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
-        self.write_log("Bienvenue dans graham. Tapez /help")
+        self.write_log("Welcome to graham. Type /help")
 
     def write_log(self, message: str) -> None:
         logger = self.query_one("#log", RichLog)
@@ -120,7 +120,7 @@ class GrahamApp(App[None]):
     def set_universe(self, tickers: list[str], note: str) -> None:
         cleaned = self.engine.set_universe(tickers)
         self._universe_note = note
-        self.write_log(f"Univers actif: {len(cleaned)} tickers ({note})")
+        self.write_log(f"Active universe: {len(cleaned)} tickers ({note})")
 
     async def run_scan(self, top: int | None, min_score: float, refresh: int | None) -> None:
         self.scan_top = top
@@ -129,20 +129,20 @@ class GrahamApp(App[None]):
             self.refresh_seconds = max(3, refresh)
             self._reset_timer()
 
-        self.write_log("Scan des fondamentaux en cours...")
+        self.write_log("Running fundamentals scan...")
         ranked = await asyncio.to_thread(self.engine.scan_fundamentals)
         self._current_results = filter_ranked(ranked, top=self.scan_top, min_score=self.scan_min_score)
         self.refresh_table()
 
         if not self._current_results:
-            self.write_log("Aucun resultat. Essayez /scan --min-score 0")
+            self.write_log("No results. Try /scan --min-score 0")
         else:
-            self.write_log(f"Scan termine: {len(self._current_results)} resultats")
+            self.write_log(f"Scan completed: {len(self._current_results)} results")
 
     async def explain_ticker(self, ticker: str, question: str) -> str:
         analysis = next((item for item in self.engine.analyses if item.ticker == ticker), None)
         if analysis is None:
-            return f"Ticker introuvable: {ticker}"
+            return f"Ticker not found: {ticker}"
 
         criteria_lines = [
             f"- {criterion.index}. {criterion.label}: {criterion.status} ({criterion.note})"
@@ -151,22 +151,22 @@ class GrahamApp(App[None]):
 
         if self.model != "none":
             system_prompt = (
-                "Tu es un analyste value investing concis. "
-                "Explique les 7 criteres de Benjamin Graham avec prudence et signale les N/A."
+                "You are a concise value investing analyst. "
+                "Explain Benjamin Graham's 7 rules carefully and call out N/A values."
             )
             user_prompt = (
                 f"Ticker: {analysis.ticker}\n"
                 f"Score: {analysis.score:.2f}\n"
-                f"Prix: {format_metric(analysis.price)}\n"
+                f"Price: {format_metric(analysis.price)}\n"
                 f"V: {format_metric(analysis.intrinsic_value)}\n"
                 f"MoS: {format_metric(analysis.mos, percentage=True)}\n"
-                f"Question: {question or 'Resume la situation'}\n"
+                f"Question: {question or 'Summarize the situation'}\n"
                 + "\n".join(criteria_lines)
             )
             try:
                 response = await asyncio.to_thread(ask_model, self.model, system_prompt, user_prompt)
                 self.write_log(f"[LLM {self.model}]\n{response}")
-                return "Explication LLM affichee dans le log."
+                return "LLM explanation written to log."
             except LLMError as exc:
                 fallback = fallback_explanation(
                     ticker=analysis.ticker,
@@ -175,9 +175,9 @@ class GrahamApp(App[None]):
                     mos=analysis.mos,
                     criteria_lines=criteria_lines,
                 )
-                self.write_log(f"Erreur LLM: {exc}")
+                self.write_log(f"LLM error: {exc}")
                 self.write_log(fallback)
-                return "Erreur LLM, fallback deterministic affiche dans le log."
+                return "LLM error, deterministic fallback written to log."
 
         fallback = fallback_explanation(
             ticker=analysis.ticker,
@@ -187,7 +187,7 @@ class GrahamApp(App[None]):
             criteria_lines=criteria_lines,
         )
         self.write_log(fallback)
-        return "Explication affichee dans le log."
+        return "Explanation written to log."
 
     def export_results(self, export_format: str) -> str:
         export_dir = Path("exports")
@@ -263,7 +263,7 @@ class GrahamApp(App[None]):
             try:
                 response = await self.processor.execute(line)
             except Exception as exc:
-                response = f"Erreur commande: {exc}"
+                response = f"Command error: {exc}"
             if response:
                 self.write_log(response)
             return
@@ -273,7 +273,7 @@ class GrahamApp(App[None]):
             self.write_log(response)
             return
 
-        self.write_log("Aucun ticker selectionne. Tapez /help")
+        self.write_log("No ticker selected. Type /help")
 
     def on_key(self, event: Key) -> None:
         prompt = self.query_one("#prompt", Input)
@@ -370,11 +370,11 @@ class GrahamApp(App[None]):
         lines = [
             f"Ticker: {analysis.ticker}",
             f"Score: {analysis.score:.2f}",
-            f"Prix: {format_metric(analysis.price)}",
+            f"Price: {format_metric(analysis.price)}",
             f"V: {format_metric(analysis.intrinsic_value)}",
             f"MoS: {format_metric(analysis.mos, percentage=True)}",
             "",
-            "Criteres:",
+            "Criteria:",
         ]
         for criterion in analysis.criteria:
             lines.append(f"{criterion.index}. {criterion.label}: {criterion.status}")
@@ -399,7 +399,7 @@ class GrahamApp(App[None]):
             self._current_results = filter_ranked(ranked, top=self.scan_top, min_score=self.scan_min_score)
             self.refresh_table()
         except Exception as exc:
-            self.write_log(f"Erreur refresh prix: {exc}")
+            self.write_log(f"Price refresh error: {exc}")
         finally:
             self._refreshing = False
 

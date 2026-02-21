@@ -66,7 +66,7 @@ class CommandProcessor:
         try:
             parts = shlex.split(line)
         except ValueError as exc:
-            return f"Commande invalide: {exc}"
+            return f"Invalid command: {exc}"
 
         if not parts:
             return ""
@@ -79,18 +79,18 @@ class CommandProcessor:
 
         if command == "/model":
             if not args:
-                return f"Modele courant: {self.app.model}. Usage: /model [none|model-name]"
+                return f"Current model: {self.app.model}. Usage: /model [none|model-name]"
             self.app.model = args[0]
-            return f"Modele actif: {self.app.model}"
+            return f"Active model: {self.app.model}"
 
         if command == "/universe":
             if not args:
                 return "Usage: /universe [sample|sp500|cac40|custom:path]"
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
-                return f"Univers vide. {note}"
+                return f"Empty universe. {note}"
             self.app.set_universe(tickers, note)
-            return f"Univers charge: {len(tickers)} tickers ({note})"
+            return f"Universe loaded: {len(tickers)} tickers ({note})"
 
         if command == "/scan":
             options = self.parse_scan_options(args)
@@ -102,7 +102,7 @@ class CommandProcessor:
                 refresh=options["refresh"],
             )
             return (
-                "Scan termine. "
+                "Scan completed. "
                 f"top={options['top'] or 'all'}, min_score={options['min_score']:.2f}, "
                 f"refresh={self.app.refresh_seconds}s"
             )
@@ -112,15 +112,15 @@ class CommandProcessor:
                 return "Usage: /screen TICKERS_CSV"
             tickers = [item.strip().upper() for item in args[0].split(",") if item.strip()]
             if not tickers:
-                return "Aucun ticker valide fourni."
+                return "No valid ticker provided."
             self.app.set_universe(tickers, "custom csv")
             await self.app.run_scan(top=None, min_score=0.0, refresh=self.app.refresh_seconds)
-            return f"Screen termine sur {len(tickers)} tickers."
+            return f"Screen completed on {len(tickers)} tickers."
 
         if command == "/explain":
             ticker, question = self._extract_explain_args(args)
             if not ticker:
-                return "Selectionnez un ticker ou utilisez /explain TICKER [question]."
+                return "Select a ticker or use /explain TICKER [question]."
             return await self.app.explain_ticker(ticker, question)
 
         if command == "/export":
@@ -128,15 +128,15 @@ class CommandProcessor:
                 return "Usage: /export [csv|json]"
             export_format = args[0].lower()
             if export_format not in self.EXPORT_FORMATS:
-                return "Format non supporte. Utilisez /export [csv|json]."
+                return "Unsupported format. Use /export [csv|json]."
             output = self.app.export_results(export_format)
-            return f"Export cree: {output}"
+            return f"Export created: {output}"
 
-        return f"Commande inconnue: {command}. Tapez /help"
+        return f"Unknown command: {command}. Type /help"
 
     def help_text(self) -> str:
         return (
-            "Commandes disponibles:\n"
+            "Available commands:\n"
             "/help\n"
             "/model [none|model-name]\n"
             "/universe [sample|sp500|cac40|custom:path]\n"
@@ -157,37 +157,37 @@ class CommandProcessor:
 
             if token == "--top":
                 if index + 1 >= len(args):
-                    return "Option --top attend une valeur numerique."
+                    return "Option --top expects a numeric value."
                 try:
                     top = int(args[index + 1])
                 except ValueError:
-                    return "Option --top invalide."
+                    return "Invalid --top value."
                 index += 2
                 continue
 
             if token == "--min-score":
                 if index + 1 >= len(args):
-                    return "Option --min-score attend une valeur numerique."
+                    return "Option --min-score expects a numeric value."
                 try:
                     min_score = float(args[index + 1])
                 except ValueError:
-                    return "Option --min-score invalide."
+                    return "Invalid --min-score value."
                 min_score = max(0.0, min(1.0, min_score))
                 index += 2
                 continue
 
             if token == "--refresh":
                 if index + 1 >= len(args):
-                    return "Option --refresh attend une valeur numerique."
+                    return "Option --refresh expects a numeric value."
                 try:
                     refresh = int(args[index + 1])
                 except ValueError:
-                    return "Option --refresh invalide."
+                    return "Invalid --refresh value."
                 refresh = max(3, refresh)
                 index += 2
                 continue
 
-            return f"Option inconnue: {token}"
+            return f"Unknown option: {token}"
 
         return {"top": top, "min_score": min_score, "refresh": refresh}
 
@@ -204,7 +204,7 @@ class CommandProcessor:
         if spec == "sample":
             return DEFAULT_SAMPLE, "sample (builtin)"
 
-        return [], f"Fichier universes/{spec}.txt introuvable"
+        return [], f"File universes/{spec}.txt not found"
 
     def _read_universe_file(self, path: Path) -> list[str]:
         try:

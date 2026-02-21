@@ -1,8 +1,17 @@
+# 👤 Who Is Benjamin Graham?
+
+Benjamin Graham (1894-1976) is widely considered the father of value investing. He promoted disciplined stock selection based on financial strength, earnings quality, and buying at a discount to intrinsic value.
+
+This project applies a practical, KISS version of Graham-style screening in a fullscreen terminal UI.
+
+Reference:
+- https://fr.wikipedia.org/wiki/Formule_de_Benjamin_Graham
+
 # 🚀 Installation
 
-## 🧰 Prerequis
+## 🧰 Prerequisites
 - Python 3.11+
-- Connexion internet (yfinance / LLM optionnel)
+- Internet access (for yfinance and optional LLM calls)
 
 ## 🐧 Ubuntu
 ```bash
@@ -28,65 +37,62 @@ pipx install .
 graham
 ```
 
-## 🔁 Alternative pip
+## 🔁 Alternative (pip)
 ```bash
 python -m pip install .
 graham
 ```
 
-# 💻 Utilisation
+# 💻 Usage
 
-- `graham` lance directement la TUI fullscreen.
-- `graham --help` affiche l'aide CLI minimale.
+- `graham` launches the fullscreen TUI.
+- `graham --help` shows a minimal CLI help.
 
-Dans la TUI, utilisez un input unique en bas:
-- slash commands (`/help`, `/scan`, etc.)
-- prompt libre (si un ticker est selectionne, cela equivaut a `/explain <ticker> "..."`)
+The app uses one input box at the bottom:
+- slash commands (`/help`, `/scan`, ...)
+- free prompt mode (if a ticker is selected, it behaves like `/explain <ticker> "..."`)
 
-# 📊 Fonctionnement
+# 📊 Product Flow
 
-Pipeline KISS:
-1. Charger un univers depuis `universes/*.txt`
-2. Calculer les fondamentaux une fois
-3. Rafraichir le prix toutes les `X` secondes
-4. Recalculer la marge de securite (MoS)
-5. Trier par:
-   - `score` desc
-   - `MoS` desc
-   - `P/E` asc
+KISS pipeline:
+1. Load a universe from `universes/*.txt`
+2. Compute fundamentals once
+3. Refresh prices every `X` seconds
+4. Recompute Margin of Safety (MoS)
+5. Rank by:
+   - `score` descending
+   - `MoS` descending
+   - `P/E` ascending
 
-Colonnes ranking:
+Ranking columns:
 - `rank | ticker | score | price | V | MoS | P/E | P/B | dividend`
 
-Score:
-- `PASS / criteres scores`
-- Les `N/A` sont exclus du denominateur
+Score formula:
+- `PASS / scored_criteria`
+- `N/A` criteria are excluded from the denominator
 
-# 🧠 Logique Graham
+# 🧠 Graham Logic
 
-Reference:
-- https://fr.wikipedia.org/wiki/Formule_de_Benjamin_Graham
-
-7 criteres implementes:
-1. Note S&P earnings/dividend rating >= B
-   - Non disponible via yfinance -> `N/A`
-   - N'entre pas dans le score si `N/A`
-2. Dette totale / actif courant < 1.10
+7 implemented criteria:
+1. S&P earnings/dividend rating >= B
+   - Not available in yfinance -> `N/A`
+   - Ignored in score if `N/A`
+2. Total debt / current assets < 1.10
 3. Current ratio > 1.50
-4. EPS croissance positive ~5 ans sans deficit (best effort)
+4. Positive EPS growth over ~5 years with no deficit (best effort if data is partial)
 5. P/E <= 9.0
 6. P/B < 1.20
-7. Dividendes (`dividendRate > 0`, requis par defaut)
+7. Dividends required by default (`dividendRate > 0`)
 
-Formule valeur intrinseque:
+Intrinsic value formula:
 - `V = EPS * (8.5 + 2g) * 4.4 / Y`
-- `Y` configurable (defaut `4.4`)
-- `g = CAGR EPS` si disponible sinon `0`
+- `Y` configurable (default `4.4`)
+- `g = EPS CAGR` if available, otherwise `0`
 - `MoS = (V - price) / price`
 
-Regle de robustesse:
-- Si une donnee manque: afficher `N/A` + note explicative.
-- Jamais crash: erreurs capturees et logguees.
+Robustness policy:
+- Missing data => show `N/A` with an explanatory note.
+- Never crash by design (errors are captured and logged when possible).
 
 # 🧭 Slash Commands
 
@@ -95,42 +101,42 @@ Regle de robustesse:
 - `/universe [sample|sp500|cac40|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
-- `/explain [TICKER] [question optionnelle]`
+- `/explain [TICKER] [optional question]`
 - `/export [csv|json]`
 
 # ✨ Autocompletion
 
-Autocompletion contextuelle (ListView Textual):
-- `/` -> commandes disponibles
-- `/model` -> `none` + exemples de modeles
-- `/universe` -> univers disponibles + `custom:path`
+Context-aware autocompletion in the input overlay:
+- `/` -> command list
+- `/model` -> `none` + model examples
+- `/universe` -> available universes + `custom:path`
 - `/export` -> `csv/json`
-- `/scan` -> options `--top`, `--min-score`, `--refresh`
+- `/scan` -> `--top`, `--min-score`, `--refresh`
 
-Clavier:
-- `↑` `↓` pour naviguer
-- `TAB` pour completer
-- `ENTER` pour valider la suggestion
+Keyboard:
+- `↑` `↓` move in suggestions
+- `TAB` complete
+- `ENTER` accept
 
-# 🤖 LLM Optionnel
+# 🤖 Optional LLM
 
-Modele par defaut: `none`
+Default model: `none`
 
-- `none` = aucun appel LLM
-- si modele actif, `/explain` peut appeler `litellm`
-- en cas d'echec LLM: erreur + fallback deterministe
+- `none` means no LLM API call
+- if a model is set, `/explain` can call `litellm`
+- if LLM call fails, the app logs the error and falls back to a deterministic template
 
-Variables d'environnement possibles:
+Environment variables (depending on provider):
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `GEMINI_API_KEY`
 
-Exemple:
+Example:
 ```text
 /model gpt-4.1-mini
 ```
 
-# 🗂️ Structure
+# 🗂️ Project Structure
 
 ```text
 graham_agent/

@@ -142,7 +142,7 @@ def _build_criteria(
             index=1,
             label="Note S&P earnings/dividend >= B",
             status=NA,
-            note="Non disponible via yfinance.",
+            note="Not available via yfinance.",
         )
     )
 
@@ -152,9 +152,9 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=2,
-                label="Dette totale / actif courant < 1.10",
+                label="Total debt / current assets < 1.10",
                 status=NA,
-                note="Impossible de calculer le ratio dette/actif courant.",
+                note="Unable to compute total debt/current assets ratio.",
             )
         )
     else:
@@ -163,7 +163,7 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=2,
-                label="Dette totale / actif courant < 1.10",
+                label="Total debt / current assets < 1.10",
                 status=status,
                 note=f"Ratio={ratio:.2f}.",
             )
@@ -180,7 +180,7 @@ def _build_criteria(
                 index=3,
                 label="Current ratio > 1.50",
                 status=NA,
-                note="Current ratio indisponible.",
+                note="Current ratio unavailable.",
             )
         )
     else:
@@ -202,9 +202,9 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=4,
-                label="EPS croissance positive ~5 ans sans deficit",
+                label="Positive EPS growth over ~5 years with no deficit",
                 status=status,
-                note=f"EPS debut={eps_series[0]:.2f}, fin={eps_series[-1]:.2f}.",
+                note=f"EPS start={eps_series[0]:.2f}, end={eps_series[-1]:.2f}.",
             )
         )
     elif earnings_growth is not None:
@@ -212,18 +212,18 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=4,
-                label="EPS croissance positive ~5 ans sans deficit",
+                label="Positive EPS growth over ~5 years with no deficit",
                 status=status,
-                note="Proxy earningsGrowth utilise (donnees EPS incompletes).",
+                note="Using earningsGrowth proxy (incomplete EPS history).",
             )
         )
     else:
         criteria.append(
             CriterionResult(
                 index=4,
-                label="EPS croissance positive ~5 ans sans deficit",
+                label="Positive EPS growth over ~5 years with no deficit",
                 status=NA,
-                note="Historique EPS incomplet.",
+                note="Incomplete EPS history.",
             )
         )
 
@@ -237,7 +237,7 @@ def _build_criteria(
                 index=5,
                 label="P/E <= 9.0",
                 status=NA,
-                note="P/E indisponible.",
+                note="P/E unavailable.",
             )
         )
     else:
@@ -258,7 +258,7 @@ def _build_criteria(
                 index=6,
                 label="P/B < 1.20",
                 status=NA,
-                note="P/B indisponible.",
+                note="P/B unavailable.",
             )
         )
     else:
@@ -277,9 +277,9 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=7,
-                label="Dividendes > 0",
+                label="Dividends > 0",
                 status=NA,
-                note="dividendRate indisponible.",
+                note="dividendRate unavailable.",
             )
         )
     else:
@@ -291,7 +291,7 @@ def _build_criteria(
         criteria.append(
             CriterionResult(
                 index=7,
-                label="Dividendes > 0",
+                label="Dividends > 0",
                 status=status,
                 note=f"dividendRate={dividend_rate:.2f}.",
             )
@@ -311,7 +311,7 @@ def analyze_symbol(
     except Exception as exc:
         return StockAnalysis(
             ticker=symbol,
-            notes=[f"Erreur de chargement yfinance: {exc}"],
+            notes=[f"yfinance loading error: {exc}"],
             criteria=[],
         )
 
@@ -349,9 +349,9 @@ def analyze_symbol(
 
     notes: list[str] = []
     if trailing_eps is None:
-        notes.append("EPS indisponible: V affiche N/A.")
+        notes.append("EPS unavailable: V is shown as N/A.")
     if price is None:
-        notes.append("Prix indisponible: MoS affiche N/A.")
+        notes.append("Price unavailable: MoS is shown as N/A.")
 
     return StockAnalysis(
         ticker=symbol,
