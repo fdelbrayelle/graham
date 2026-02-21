@@ -156,6 +156,21 @@ def test_extract_tokyo_tickers_from_csv_text_reads_code_column() -> None:
     assert processor._extract_tokyo_tickers_from_csv_text(csv_text) == ["7203.T", "6758.T", "6501.T"]
 
 
+def test_extract_tokyo_constituents_from_csv_text_includes_company_names() -> None:
+    processor = _processor()
+    csv_text = "\n".join(
+        [
+            "Code,Company,Weight",
+            "7203,Toyota Motor,2.10",
+            "6758,Sony Group,1.90",
+        ]
+    )
+    tickers, names = processor._extract_tokyo_constituents_from_csv_text(csv_text)
+    assert tickers == ["7203.T", "6758.T"]
+    assert names["7203.T"] == "Toyota Motor"
+    assert names["6758.T"] == "Sony Group"
+
+
 def test_extract_wikipedia_tickers_from_html_applies_cac_suffix() -> None:
     processor = _processor()
     html = "\n".join(
@@ -187,8 +202,31 @@ def test_extract_wikipedia_tickers_from_html_keeps_eurostoxx_exchange_suffix() -
 
 def test_fetch_public_index_constituents_prefers_nikkei_source(monkeypatch) -> None:
     processor = _processor()
-    monkeypatch.setattr(processor, "_fetch_nikkei_components", lambda: ["7203.T", "6758.T"])
-    monkeypatch.setattr(processor, "_fetch_wikipedia_components", lambda index_name: [])
-    values, note = processor._fetch_public_index_constituents("nikkei225")
+    monkeypatch.setattr(
+        processor,
+        "_fetch_nikkei_components_with_names",
+        lambda: (["7203.T", "6758.T"], {"7203.T": "Toyota Motor", "6758.T": "Sony Group"}),
+    )
+    monkeypatch.setattr(processor, "_fetch_wikipedia_components_with_names", lambda index_name: ([], {}))
+    values, note, names = processor._fetch_public_index_constituents("nikkei225")
     assert values == ["7203.T", "6758.T"]
     assert note == "nikkei:nk225"
+    assert names["7203.T"] == "Toyota Motor"
+
+
+def test_api_json_cache_uses_ttl(monkeypatch) -> None:
+    processor = _processor()
+    calls = {"count": 0}
+
+    def fake_http_get_bytes(url: str, headers: dict[str, str], timeout: int) -> bytes:
+        calls["count"] += 1
+        return b'{"data":{"rows":[{"symbol":"AAPL"}]}}'
+
+    monkeypatch.setattr(processor, "_http_get_bytes", fake_http_get_bytes)
+    headers = {"Referer": "https://example.com"}
+
+    first = processor._load_json("https://api.example.com/test", headers)
+    second = processor._load_json("https://api.example.com/test", headers)
+
+    assert first == second
+    assert calls["count"] == 1

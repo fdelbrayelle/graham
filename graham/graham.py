@@ -3,6 +3,9 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import logging
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -11,6 +14,65 @@ if TYPE_CHECKING:
 PASS = "PASS"
 FAIL = "FAIL"
 NA = "N/A"
+_YFINANCE_CACHE_CONFIGURED = False
+_YFINANCE_LOGGING_CONFIGURED = False
+
+
+def _ensure_writable_dir(path: Path) -> bool:
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".write_probe"
+        probe.write_text("ok", encoding="utf-8")
+        probe.unlink(missing_ok=True)
+    except Exception:
+        return False
+    return True
+
+
+def _configure_yfinance_cache(yf_module: Any) -> None:
+    global _YFINANCE_CACHE_CONFIGURED
+    if _YFINANCE_CACHE_CONFIGURED:
+        return
+
+    cache_module = getattr(yf_module, "cache", None)
+    set_cache_location = getattr(cache_module, "set_cache_location", None)
+    set_tz_cache_location = getattr(yf_module, "set_tz_cache_location", None)
+    if not callable(set_cache_location) and not callable(set_tz_cache_location):
+        _YFINANCE_CACHE_CONFIGURED = True
+        return
+
+    candidates = [
+        Path.home() / ".graham" / "cache" / "yfinance",
+        Path(os.getenv("XDG_CACHE_HOME", "")).expanduser() / "graham" / "yfinance"
+        if os.getenv("XDG_CACHE_HOME")
+        else None,
+        Path("/tmp") / "graham-yfinance-cache",
+    ]
+
+    for candidate in candidates:
+        if candidate is None:
+            continue
+        if not _ensure_writable_dir(candidate):
+            continue
+        try:
+            if callable(set_cache_location):
+                set_cache_location(str(candidate))
+            if callable(set_tz_cache_location):
+                tz_cache = candidate / "tz"
+                tz_cache.mkdir(parents=True, exist_ok=True)
+                set_tz_cache_location(str(tz_cache))
+            _YFINANCE_CACHE_CONFIGURED = True
+            return
+        except Exception:
+            continue
+
+
+def _configure_yfinance_logging() -> None:
+    global _YFINANCE_LOGGING_CONFIGURED
+    if _YFINANCE_LOGGING_CONFIGURED:
+        return
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    _YFINANCE_LOGGING_CONFIGURED = True
 
 
 @dataclass
@@ -383,15 +445,12 @@ def analyze_symbol(
     y: float = 4.4,
     require_dividend: bool = True,
 ) -> StockAnalysis:
+    notes: list[str] = []
     try:
         info = ticker.info or {}
     except Exception as exc:
-        return StockAnalysis(
-            ticker=symbol,
-            company_name=symbol,
-            notes=[f"yfinance loading error: {exc}"],
-            criteria=[],
-        )
+        info = {}
+        notes.append(f"yfinance info error: {exc}")
 
     price = _extract_price(info, ticker)
     price_time = _extract_price_time(info, ticker)
@@ -463,7 +522,6 @@ def analyze_symbol(
         str(info.get("longName") or info.get("shortName") or info.get("displayName") or symbol).strip()
     )
 
-    notes: list[str] = []
     if trailing_eps is None:
         notes.append("EPS unavailable: V is shown as N/A.")
     if price is None:
@@ -515,6 +573,7 @@ class GrahamEngine:
         self.universe: list[str] = []
         self._tickers: dict[str, Any] = {}
         self._analyses: dict[str, StockAnalysis] = {}
+        self._company_name_overrides: dict[str, str] = {}
 
     @property
     def analyses(self) -> list[StockAnalysis]:
@@ -532,10 +591,29 @@ class GrahamEngine:
         self.universe = cleaned
         # Keep only analyses that belong to the active universe.
         self._analyses = {symbol: self._analyses[symbol] for symbol in cleaned if symbol in self._analyses}
+        self._company_name_overrides = {
+            symbol: name for symbol, name in self._company_name_overrides.items() if symbol in cleaned
+        }
         return self.universe
+
+    def set_company_name_overrides(self, overrides: dict[str, str] | None) -> None:
+        if not overrides:
+            self._company_name_overrides = {}
+            return
+        normalized: dict[str, str] = {}
+        for symbol, name in overrides.items():
+            ticker = str(symbol).strip().upper()
+            company = str(name).strip()
+            if not ticker or not company:
+                continue
+            normalized[ticker] = company
+        self._company_name_overrides = normalized
 
     def scan_fundamentals(self) -> list[StockAnalysis]:
         import yfinance as yf
+
+        _configure_yfinance_cache(yf)
+        _configure_yfinance_logging()
 
         symbols = list(self.universe)
         if not symbols:
@@ -546,6 +624,7 @@ class GrahamEngine:
             ticker = self._tickers.get(symbol)
             if ticker is None:
                 ticker = yf.Ticker(symbol)
+            previous = self._analyses.get(symbol)
             try:
                 analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
             except Exception as exc:
@@ -554,10 +633,35 @@ class GrahamEngine:
                     company_name=symbol,
                     notes=[f"analysis error: {exc}"],
                 )
+            override_name = self._company_name_overrides.get(symbol)
+            if override_name and (not analysis.company_name or analysis.company_name == symbol):
+                analysis.company_name = override_name
+            if (
+                previous is not None
+                and analysis.company_name == symbol
+                and previous.company_name
+                and previous.company_name != symbol
+            ):
+                analysis.company_name = previous.company_name
+            if previous is not None:
+                if analysis.price is None and previous.price is not None:
+                    analysis.price = previous.price
+                if analysis.price_time is None and previous.price_time is not None:
+                    analysis.price_time = previous.price_time
+                if analysis.intrinsic_value is None and previous.intrinsic_value is not None:
+                    analysis.intrinsic_value = previous.intrinsic_value
+                if analysis.mos is None and previous.mos is not None:
+                    analysis.mos = previous.mos
+                if analysis.pe is None and previous.pe is not None:
+                    analysis.pe = previous.pe
+                if analysis.pb is None and previous.pb is not None:
+                    analysis.pb = previous.pb
+                if analysis.dividend_rate is None and previous.dividend_rate is not None:
+                    analysis.dividend_rate = previous.dividend_rate
             return symbol, ticker, analysis
 
         next_analyses: dict[str, StockAnalysis] = {}
-        max_workers = min(8, max(1, len(symbols)))
+        max_workers = min(4, max(1, len(symbols)))
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             for symbol, ticker, analysis in pool.map(_scan_one, symbols):

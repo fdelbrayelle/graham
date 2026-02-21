@@ -7,6 +7,7 @@ import json
 import os
 import re
 import shlex
+import time
 from html import unescape
 from pathlib import Path
 from typing import Any
@@ -373,6 +374,8 @@ class CommandProcessor:
         self.app = app
         self._ishares_product_url_cache: dict[str, str | None] = {}
         self._ishares_screener_payload: dict[str, Any] | None = None
+        self._api_cache_ttl_seconds = 3600
+        self._api_cache: dict[str, tuple[float, Any]] = {}
 
     def suggestions(self, text: str) -> list[str]:
         value = text.strip()
@@ -504,11 +507,22 @@ class CommandProcessor:
                 return self._t(
                     "Unknown index. Use /indices to list supported options."
                 )
-            tickers, note = await asyncio.to_thread(self._fetch_index_tickers, canonical)
+            tickers, note, company_overrides = await asyncio.to_thread(self._fetch_index_tickers, canonical)
             if not tickers:
                 return self._t(f"Unable to fetch index constituents for {canonical}.")
             remember_spec = self._persist_index_universe(canonical, tickers)
-            self.app.set_universe(tickers, note, remember_spec=remember_spec)
+            try:
+                self.app.set_universe(
+                    tickers,
+                    note,
+                    remember_spec=remember_spec,
+                    company_overrides=company_overrides,
+                )
+            except TypeError:
+                set_overrides = getattr(self.app, "set_company_name_overrides", None)
+                if callable(set_overrides):
+                    set_overrides(company_overrides)
+                self.app.set_universe(tickers, note, remember_spec=remember_spec)
             await self.app.run_scan(
                 top=self.app.scan_top,
                 min_score=self.app.scan_min_score,
@@ -551,6 +565,9 @@ class CommandProcessor:
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
                 return self._t(f"Empty universe. {note}")
+            set_overrides = getattr(self.app, "set_company_name_overrides", None)
+            if callable(set_overrides):
+                set_overrides(None)
             self.app.set_universe(tickers, note, remember_spec=normalize_universe_spec(args[0]))
             await self.app.run_scan(
                 top=self.app.scan_top,
@@ -616,6 +633,9 @@ class CommandProcessor:
             tickers = [item.strip().upper() for item in args[0].split(",") if item.strip()]
             if not tickers:
                 return self._t("No valid ticker provided.")
+            set_overrides = getattr(self.app, "set_company_name_overrides", None)
+            if callable(set_overrides):
+                set_overrides(None)
             self.app.set_universe(tickers, "custom csv")
             await self.app.run_scan(top=None, min_score=0.0, refresh=self.app.refresh_seconds)
             return self._t(f"Screen completed on {len(tickers)} tickers.")
@@ -939,20 +959,26 @@ class CommandProcessor:
                 return name
         return None
 
-    def _fetch_index_tickers(self, index_name: str) -> tuple[list[str], str]:
+    def _fetch_index_tickers(self, index_name: str) -> tuple[list[str], str, dict[str, str]]:
         import yfinance as yf
 
         spec = INDEX_SPECS[index_name]
         symbols = spec.get("symbols", [])
         found: list[str] = []
+        found_set: set[str] = set()
+        company_overrides: dict[str, str] = {}
         source_notes: list[str] = []
 
-        public_values, public_note = self._fetch_public_index_constituents(index_name)
+        public_values, public_note, public_names = self._fetch_public_index_constituents(index_name)
         if public_values:
             source_notes.append(public_note)
+        for ticker, company in public_names.items():
+            if ticker and company:
+                company_overrides[ticker] = company
         for item in public_values:
             normalized = self._normalize_ticker(item)
-            if normalized and normalized not in found:
+            if normalized and normalized not in found_set:
+                found_set.add(normalized)
                 found.append(normalized)
 
         for symbol in symbols:
@@ -962,7 +988,8 @@ class CommandProcessor:
                     source_notes.append(f"ishares:{symbol}")
                 for item in ishares_values:
                     normalized = self._normalize_ticker(item)
-                    if normalized and normalized not in found:
+                    if normalized and normalized not in found_set:
+                        found_set.add(normalized)
                         found.append(normalized)
 
             nasdaq_values = self._fetch_nasdaq_constituents(symbol)
@@ -970,7 +997,8 @@ class CommandProcessor:
                 source_notes.append(f"nasdaq:{symbol}")
             for item in nasdaq_values:
                 normalized = self._normalize_ticker(item)
-                if normalized and normalized not in found:
+                if normalized and normalized not in found_set:
+                    found_set.add(normalized)
                     found.append(normalized)
 
             try:
@@ -984,73 +1012,93 @@ class CommandProcessor:
 
             for item in extracted:
                 normalized = self._normalize_ticker(item)
-                if normalized and normalized not in found:
+                if normalized and normalized not in found_set:
+                    found_set.add(normalized)
                     found.append(normalized)
 
         note = f"index:{index_name}"
         if source_notes:
             note = f"{note} ({', '.join(source_notes)})"
-        return found, note
+        return found, note, company_overrides
 
-    def _fetch_public_index_constituents(self, index_name: str) -> tuple[list[str], str]:
+    def _fetch_public_index_constituents(self, index_name: str) -> tuple[list[str], str, dict[str, str]]:
         if index_name == "nikkei225":
-            values = self._fetch_nikkei_components()
+            values, names = self._fetch_nikkei_components_with_names()
             if values:
-                return values, "nikkei:nk225"
-            values = self._fetch_wikipedia_components(index_name)
+                return values, "nikkei:nk225", names
+            values, names = self._fetch_wikipedia_components_with_names(index_name)
             if values:
-                return values, "wikipedia:nikkei225"
-            return [], ""
+                return values, "wikipedia:nikkei225", names
+            return [], "", {}
 
         if index_name == "topix":
-            values = self._fetch_topix_components()
+            values, names = self._fetch_topix_components_with_names()
             if values:
-                return values, "jpx:topix"
-            return [], ""
+                return values, "jpx:topix", names
+            return [], "", {}
 
         if index_name in {"cac40", "dax40", "dowjones", "eurostoxx"}:
-            values = self._fetch_wikipedia_components(index_name)
+            values, names = self._fetch_wikipedia_components_with_names(index_name)
             if values:
-                return values, f"wikipedia:{index_name}"
-        return [], ""
+                return values, f"wikipedia:{index_name}", names
+        return [], "", {}
 
-    def _fetch_nikkei_components(self) -> list[str]:
+    def _fetch_nikkei_components_with_names(self) -> tuple[list[str], dict[str, str]]:
         text = self._load_text(
             NIKKEI_COMPONENTS_URL,
             headers=self._http_headers(referer="https://indexes.nikkei.co.jp/en"),
         )
         if not text:
-            return []
+            return [], {}
 
-        codes = re.findall(r"<td[^>]*>\s*([1-9]\d{3})\s*</td>", text, flags=re.IGNORECASE)
-        if len(codes) < 180:
-            return []
+        row_matches = re.findall(
+            r"<td[^>]*>\s*([1-9]\d{3})\s*</td>.*?<a[^>]*>(.*?)</a>",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if len(row_matches) < 180:
+            codes = re.findall(r"<td[^>]*>\s*([1-9]\d{3})\s*</td>", text, flags=re.IGNORECASE)
+            rows = [(code, "") for code in codes]
+        else:
+            rows = row_matches
 
         found: list[str] = []
+        names: dict[str, str] = {}
         seen: set[str] = set()
-        for code in codes:
+        for code, company_raw in rows:
             ticker = f"{code}.T"
             normalized = self._normalize_ticker(ticker)
             if not normalized or normalized in seen:
                 continue
             seen.add(normalized)
             found.append(normalized)
-        return found
+            company_name = self._clean_company_name(company_raw)
+            if company_name:
+                names[normalized] = company_name
+        return found, names
 
-    def _fetch_topix_components(self) -> list[str]:
+    def _fetch_nikkei_components(self) -> list[str]:
+        values, _ = self._fetch_nikkei_components_with_names()
+        return values
+
+    def _fetch_topix_components_with_names(self) -> tuple[list[str], dict[str, str]]:
         text = self._load_text(
             TOPIX_CONSTITUENTS_CSV_URL,
             headers=self._http_headers(referer="https://www.jpx.co.jp/english/"),
         )
-        return self._extract_tokyo_tickers_from_csv_text(text)
+        return self._extract_tokyo_constituents_from_csv_text(text)
 
-    def _fetch_wikipedia_components(self, index_name: str) -> list[str]:
+    def _fetch_topix_components(self) -> list[str]:
+        values, _ = self._fetch_topix_components_with_names()
+        return values
+
+    def _fetch_wikipedia_components_with_names(self, index_name: str) -> tuple[list[str], dict[str, str]]:
         payload = INDEX_WIKIPEDIA_PAGES.get(index_name)
         if payload is None:
-            return []
+            return [], {}
         page = str(payload.get("page", "")).strip()
         if not page:
-            return []
+            return [], {}
         params = urlencode(
             {
                 "action": "parse",
@@ -1064,27 +1112,37 @@ class CommandProcessor:
         data = self._load_json(url, headers=self._http_headers(referer="https://en.wikipedia.org/"))
         parse_node = data.get("parse")
         if not isinstance(parse_node, dict):
-            return []
+            return [], {}
         html = parse_node.get("text")
         if not isinstance(html, str):
-            return []
-        return self._extract_wikipedia_tickers_from_html(index_name, html)
+            return [], {}
+        return self._extract_wikipedia_constituents_from_html(index_name, html)
+
+    def _fetch_wikipedia_components(self, index_name: str) -> list[str]:
+        values, _ = self._fetch_wikipedia_components_with_names(index_name)
+        return values
 
     def _extract_tokyo_tickers_from_csv_text(self, text: str) -> list[str]:
+        values, _ = self._extract_tokyo_constituents_from_csv_text(text)
+        return values
+
+    def _extract_tokyo_constituents_from_csv_text(self, text: str) -> tuple[list[str], dict[str, str]]:
         if not text.strip():
-            return []
+            return [], {}
         try:
             rows = list(csv.reader(io.StringIO(text)))
         except Exception:
-            return []
+            return [], {}
         if len(rows) < 2:
-            return []
+            return [], {}
 
         code_col = self._find_probable_stock_code_column(rows)
         if code_col is None:
-            return []
+            return [], {}
+        name_col = self._find_probable_name_column(rows, exclude=code_col)
 
         found: list[str] = []
+        names: dict[str, str] = {}
         seen: set[str] = set()
         for row in rows[1:]:
             if code_col >= len(row):
@@ -1099,7 +1157,11 @@ class CommandProcessor:
                 continue
             seen.add(normalized)
             found.append(normalized)
-        return found
+            if name_col is not None and name_col < len(row):
+                company_name = self._clean_company_name(row[name_col])
+                if company_name:
+                    names[normalized] = company_name
+        return found, names
 
     def _find_probable_stock_code_column(self, rows: list[list[str]]) -> int | None:
         header = rows[0]
@@ -1138,15 +1200,44 @@ class CommandProcessor:
         cleaned = value.strip().strip('"').lower()
         return cleaned.replace("_", " ").replace("-", " ")
 
+    def _find_probable_name_column(self, rows: list[list[str]], exclude: int | None = None) -> int | None:
+        if not rows:
+            return None
+        header = rows[0]
+        cleaned_headers = [self._normalized_header_value(item) for item in header]
+        for idx, value in enumerate(cleaned_headers):
+            if idx == exclude:
+                continue
+            if any(token in value for token in ("company", "name", "constituent", "security", "issue")):
+                return idx
+        return None
+
+    def _clean_company_name(self, value: str) -> str:
+        cleaned = self._clean_html_cell(value)
+        if not cleaned:
+            return ""
+        if cleaned.upper() in {"N/A", "NA", "-"}:
+            return ""
+        return cleaned
+
     def _extract_wikipedia_tickers_from_html(self, index_name: str, html: str) -> list[str]:
+        values, _ = self._extract_wikipedia_constituents_from_html(index_name, html)
+        return values
+
+    def _extract_wikipedia_constituents_from_html(
+        self,
+        index_name: str,
+        html: str,
+    ) -> tuple[list[str], dict[str, str]]:
         spec = INDEX_WIKIPEDIA_PAGES.get(index_name)
         if spec is None:
-            return []
+            return [], {}
         keywords = tuple(str(item).lower() for item in spec.get("header_keywords", ()))
         suffix = str(spec.get("default_suffix", "")).strip().upper()
 
         tables = self._extract_wikitable_rows(html)
         found: list[str] = []
+        names: dict[str, str] = {}
         seen: set[str] = set()
 
         for table_rows in tables:
@@ -1160,8 +1251,19 @@ class CommandProcessor:
             ]
             if not target_columns:
                 continue
+            company_columns = [
+                idx
+                for idx, item in enumerate(header)
+                if any(token in item for token in ("company", "name", "constituent", "security"))
+            ]
 
             for row in table_rows[1:]:
+                company_name = ""
+                for col in company_columns:
+                    if col < len(row):
+                        company_name = self._clean_company_name(row[col])
+                        if company_name:
+                            break
                 for col in target_columns:
                     if col >= len(row):
                         continue
@@ -1171,7 +1273,9 @@ class CommandProcessor:
                             continue
                         seen.add(normalized)
                         found.append(normalized)
-        return found
+                        if company_name:
+                            names[normalized] = company_name
+        return found, names
 
     def _extract_wikitable_rows(self, html: str) -> list[list[list[str]]]:
         tables: list[list[list[str]]] = []
@@ -1457,11 +1561,35 @@ class CommandProcessor:
             offset += limit
         return out
 
-    def _load_json(self, url: str, headers: dict[str, str]) -> dict[str, Any]:
+    def _api_cache_key(self, kind: str, url: str, headers: dict[str, str]) -> str:
+        items = tuple(sorted((str(key).lower(), str(value)) for key, value in headers.items()))
+        return f"{kind}|{url}|{items!r}"
+
+    def _api_cache_get(self, key: str) -> Any:
+        entry = self._api_cache.get(key)
+        if entry is None:
+            return None
+        expires_at, payload = entry
+        if time.time() >= expires_at:
+            self._api_cache.pop(key, None)
+            return None
+        return payload
+
+    def _api_cache_set(self, key: str, payload: Any) -> None:
+        self._api_cache[key] = (time.time() + float(self._api_cache_ttl_seconds), payload)
+
+    def _http_get_bytes(self, url: str, headers: dict[str, str], timeout: int) -> bytes:
         request = Request(url, headers=headers)
+        with urlopen(request, timeout=timeout) as response:
+            return response.read()
+
+    def _load_json(self, url: str, headers: dict[str, str]) -> dict[str, Any]:
+        cache_key = self._api_cache_key("json", url, headers)
+        cached = self._api_cache_get(cache_key)
+        if isinstance(cached, dict):
+            return cached
         try:
-            with urlopen(request, timeout=4) as response:
-                raw = response.read()
+            raw = self._http_get_bytes(url, headers=headers, timeout=4)
         except (URLError, TimeoutError, OSError):
             return {}
         try:
@@ -1469,20 +1597,27 @@ class CommandProcessor:
         except Exception:
             return {}
         if isinstance(payload, dict):
+            if payload:
+                self._api_cache_set(cache_key, payload)
             return payload
         return {}
 
     def _load_text(self, url: str, headers: dict[str, str]) -> str:
-        request = Request(url, headers=headers)
+        cache_key = self._api_cache_key("text", url, headers)
+        cached = self._api_cache_get(cache_key)
+        if isinstance(cached, str):
+            return cached
         try:
-            with urlopen(request, timeout=5) as response:
-                raw = response.read()
+            raw = self._http_get_bytes(url, headers=headers, timeout=5)
         except (URLError, TimeoutError, OSError):
             return ""
         try:
-            return raw.decode("utf-8", errors="ignore")
+            text = raw.decode("utf-8", errors="ignore")
         except Exception:
             return ""
+        if text:
+            self._api_cache_set(cache_key, text)
+        return text
 
     def _http_headers(self, referer: str) -> dict[str, str]:
         return {

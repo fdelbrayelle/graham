@@ -15,9 +15,10 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.events import Click, Key, Resize
+from textual.css.query import NoMatches
 from textual.widgets import DataTable, Header, Input, RichLog, Static
 
-from graham.command_feedback import command_result_feedback, command_start_feedback
+from graham.command_feedback import command_name, command_result_feedback, command_start_feedback
 from graham.commands import CommandProcessor, discover_universe_names
 from graham.completion import apply_completion
 from graham.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
@@ -181,6 +182,7 @@ class GrahamApp(App[None]):
         self._scan_spinner_step = 0
         self._scan_spinner_frames = ["-", "\\", "|", "/"]
         self._scan_spinner_timer = None
+        self._initial_scan_task: asyncio.Task[None] | None = None
         self._details_nav_mode = False
         self._sort_column = "rank"
         self._sort_reverse = False
@@ -224,11 +226,31 @@ class GrahamApp(App[None]):
         self._apply_responsive_layout()
 
     def _start_initial_scan(self) -> None:
-        asyncio.create_task(self._run_initial_scan())
+        if self._initial_scan_task is not None and not self._initial_scan_task.done():
+            return
+        self._initial_scan_task = asyncio.create_task(self._run_initial_scan())
+
+    def on_unmount(self) -> None:
+        if self._initial_scan_task is not None and not self._initial_scan_task.done():
+            self._initial_scan_task.cancel()
+        if self._scan_spinner_timer is not None:
+            try:
+                self._scan_spinner_timer.stop()
+            except Exception:
+                pass
+            self._scan_spinner_timer = None
+        if self._timer is not None:
+            try:
+                self._timer.stop()
+            except Exception:
+                pass
+            self._timer = None
 
     async def _run_initial_scan(self) -> None:
         try:
             await self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds)
+        except asyncio.CancelledError:
+            return
         except Exception as exc:
             self.write_log(f"Initial scan error: {exc}")
 
@@ -287,7 +309,9 @@ class GrahamApp(App[None]):
         )
 
     def write_log(self, message: str, translate: bool = True) -> None:
-        logger = self.query_one("#log", RichLog)
+        logger = self._query_log()
+        if logger is None:
+            return
         rendered = self.tr(message) if translate else message
         before_start = int(getattr(logger, "_start_line", 0))
         before_len = len(logger.lines)
@@ -295,6 +319,12 @@ class GrahamApp(App[None]):
         after_start = int(getattr(logger, "_start_line", 0))
         after_len = len(logger.lines)
         self._register_log_block(rendered, before_start + before_len, after_start + after_len, after_start)
+
+    def _query_log(self) -> RichLog | None:
+        try:
+            return self.query_one("#log", RichLog)
+        except NoMatches:
+            return None
 
     def get_default_universe(self) -> str:
         return self.settings.default_universe
@@ -320,8 +350,18 @@ class GrahamApp(App[None]):
             return [item.ticker for item in self._current_results]
         return list(self.engine.universe)
 
-    def set_universe(self, tickers: list[str], note: str, remember_spec: str | None = None) -> None:
+    def set_company_name_overrides(self, overrides: dict[str, str] | None) -> None:
+        self.engine.set_company_name_overrides(overrides)
+
+    def set_universe(
+        self,
+        tickers: list[str],
+        note: str,
+        remember_spec: str | None = None,
+        company_overrides: dict[str, str] | None = None,
+    ) -> None:
         cleaned = self.engine.set_universe(tickers)
+        self.set_company_name_overrides(company_overrides)
         self._universe_note = note
         if remember_spec is not None:
             self.settings.default_universe = remember_spec
@@ -570,7 +610,8 @@ class GrahamApp(App[None]):
             started_message = command_start_feedback(line)
             if started_message:
                 self.notify(started_message, severity="information")
-                self.write_log(started_message, translate=False)
+                if command_name(line) != "/moat":
+                    self.write_log(started_message, translate=False)
             try:
                 response = await self.processor.execute(line)
             except Exception as exc:
@@ -1116,7 +1157,7 @@ class GrahamApp(App[None]):
 
     def _set_scan_loading(self, loading: bool) -> None:
         self._scan_loading = loading
-        logger = self.query_one("#log", RichLog)
+        logger = self._query_log()
         if not loading:
             if self._scan_spinner_timer is not None:
                 try:
@@ -1124,7 +1165,11 @@ class GrahamApp(App[None]):
                 except Exception:
                     pass
                 self._scan_spinner_timer = None
-            logger.border_title = ""
+            if logger is not None:
+                logger.border_title = ""
+            return
+
+        if logger is None:
             return
 
         self._scan_spinner_step = 0
@@ -1135,7 +1180,9 @@ class GrahamApp(App[None]):
     def _tick_scan_spinner(self) -> None:
         if not self._scan_loading:
             return
-        logger = self.query_one("#log", RichLog)
+        logger = self._query_log()
+        if logger is None:
+            return
         spinner = self._scan_spinner_frames[self._scan_spinner_step % len(self._scan_spinner_frames)]
         self._scan_spinner_step += 1
         logger.border_title = f"{spinner} {self.tr('Loading tickers...')}"
