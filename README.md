@@ -146,6 +146,7 @@ Robustness policy:
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
 - `/explain [TICKER] [optional question]`
+- `/moat TICKER`
 - `/rating GREEN ORANGE`
 - `/export [csv|json]`
 
@@ -159,6 +160,7 @@ Context-aware autocompletion in the input overlay:
 - `/default-universe` -> available presets
 - `/export` -> `csv/json`
 - `/scan` -> `--top`, `--min-score`, `--refresh`
+- `/moat` -> current universe tickers
 
 Keyboard:
 - `↑` `↓` move in suggestions
@@ -170,15 +172,16 @@ Keyboard:
 Default model: `none`
 
 - `none` means no LLM API call
-- if a model is set, `/explain` can call `litellm`
+- if a model is set, `/explain` and `/moat` can call `litellm`
 - if LLM call fails, the app logs the error and falls back to a deterministic template
 - `/model` accepts any valid provider model ID; the built-in suggestion list contains verified official IDs.
+- for maximum compatibility, you can set explicit IDs like `provider/model` (example: `openai/gpt-5`, `anthropic/claude-sonnet-4-5`, `gemini/gemini-2.5-pro`)
 - Your selected model is persisted in `~/.graham/config.json`.
 
 Environment variables (depending on provider):
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
-- `GEMINI_API_KEY`
+- `GEMINI_API_KEY` or `GOOGLE_API_KEY`
 
 Examples:
 ```text

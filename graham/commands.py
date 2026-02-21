@@ -285,6 +285,7 @@ class CommandProcessor:
         "/sort",
         "/screen",
         "/explain",
+        "/moat",
         "/rating",
         "/export",
     ]
@@ -414,6 +415,10 @@ class CommandProcessor:
             return []
 
         if cmd == "/explain":
+            tickers = self.app.current_tickers()
+            return [ticker for ticker in tickers if ticker.startswith(current.upper())]
+
+        if cmd == "/moat":
             tickers = self.app.current_tickers()
             return [ticker for ticker in tickers if ticker.startswith(current.upper())]
 
@@ -571,6 +576,11 @@ class CommandProcessor:
                 return self._t("Select a ticker or use /explain TICKER [question].")
             return await self.app.explain_ticker(ticker, question)
 
+        if command == "/moat":
+            if len(args) != 1:
+                return self._t("Usage: /moat TICKER")
+            return await self.app.moat_ticker(args[0])
+
         if command == "/export":
             if not args:
                 return self._t("Usage: /export [csv|json]")
@@ -608,7 +618,7 @@ class CommandProcessor:
         else:
             model_note = (
                 f"Model mode: {self.app.model} (LLM enabled).\n"
-                "The app uses yfinance for screening data and uses the configured LLM for /explain.\n"
+                "The app uses yfinance for screening data and uses the configured LLM for /explain and /moat.\n"
                 "If the LLM call fails, the app falls back to a deterministic local explanation."
             )
 
@@ -626,6 +636,7 @@ class CommandProcessor:
             "/sort COLUMN [asc|desc]\n"
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
+            "/moat TICKER\n"
             "/rating GREEN ORANGE\n"
             "/export [csv|json]\n"
             "Examples: /indices sp500, /indices msci_world, /indices dax40, /indices nikkei225\n\n"
@@ -803,15 +814,22 @@ class CommandProcessor:
         if value.startswith("claude-"):
             return self._env_hint("ANTHROPIC_API_KEY")
         if value.startswith("gemini-"):
-            return self._env_hint("GEMINI_API_KEY")
+            return self._gemini_env_hint()
         return self._t(
-            "Custom model ID: make sure the corresponding provider API key is set in your environment."
+            "Custom model ID: if auto-detection fails, use explicit provider/model (for example openai/gpt-5)."
         )
 
     def _env_hint(self, env_key: str) -> str:
         if os.getenv(env_key):
             return self._t(f"{env_key} detected.")
         return self._t(f"{env_key} is missing. Export it before using this model.")
+
+    def _gemini_env_hint(self) -> str:
+        if os.getenv("GOOGLE_API_KEY"):
+            return self._t("GOOGLE_API_KEY detected.")
+        if os.getenv("GEMINI_API_KEY"):
+            return self._t("GEMINI_API_KEY detected.")
+        return self._t("GEMINI_API_KEY or GOOGLE_API_KEY is missing. Export one before using this model.")
 
     def _unique_preserve_order(self, items: list[str]) -> list[str]:
         result: list[str] = []

@@ -16,7 +16,7 @@ from textual.widgets import DataTable, Header, Input, RichLog, Static
 from graham.commands import CommandProcessor, discover_universe_names
 from graham.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
 from graham.i18n import DisplayTranslator
-from graham.llm import LLMError, ask_model, fallback_explanation
+from graham.llm import LLMError, ask_model, build_moat_prompt, fallback_explanation
 from graham.settings import UserSettings, load_user_settings, save_user_settings
 
 
@@ -372,6 +372,24 @@ class GrahamApp(App[None]):
         )
         self.write_log(fallback)
         return self.tr("Explanation written to log.")
+
+    async def moat_ticker(self, ticker: str) -> str:
+        if self.model == "none":
+            return self.tr("LLM disabled. Set a model first with /model [model-name].")
+
+        symbol = ticker.strip().upper()
+        if not symbol:
+            return self.tr("Usage: /moat TICKER")
+
+        prompt = build_moat_prompt(symbol)
+        try:
+            response = await asyncio.to_thread(ask_model, self.model, "", prompt, 60)
+        except LLMError as exc:
+            self.write_log(f"LLM error: {exc}")
+            return self.tr("LLM error while generating moat analysis.")
+
+        self.write_log(f"[LLM {self.model} /moat {symbol}]\n{response}", translate=False)
+        return self.tr("LLM moat analysis written to log.")
 
     def export_results(self, export_format: str) -> str:
         export_dir = Path("exports")
