@@ -25,6 +25,8 @@ class GrahamApp(App[None]):
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit", show=False, priority=True),
         Binding("ctrl+q", "noop", "", show=False, priority=True),
+        Binding("ctrl+d", "focus_details", "Details", show=False, priority=True),
+        Binding("ctrl+p", "focus_prompt", "Prompt", show=False, priority=True),
     ]
     CSS = """
     Screen {
@@ -54,16 +56,13 @@ class GrahamApp(App[None]):
     }
 
     #log {
-        dock: bottom;
-        height: 8;
+        height: 1fr;
         min-height: 4;
-        max-height: 10;
         border: round #386641;
         overflow: auto;
     }
 
     #input-wrap {
-        dock: bottom;
         height: auto;
         min-height: 3;
         margin-top: 1;
@@ -102,9 +101,8 @@ class GrahamApp(App[None]):
     }
 
     #log.narrow {
-        height: 6;
+        height: 1fr;
         min-height: 4;
-        max-height: 8;
     }
     """
 
@@ -140,7 +138,7 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield Static(self.tr("No row selected."), id="details")
+            yield Static(self.tr("No row selected."), id="details", can_focus=True)
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
@@ -438,6 +436,17 @@ class GrahamApp(App[None]):
         self.write_log("No ticker selected. Type /help")
 
     def on_key(self, event: Key) -> None:
+        details = self.query_one("#details", Static)
+        if self.focused is details:
+            if event.key in {"up", "down", "pageup", "pagedown", "home", "end"}:
+                self._scroll_details(event.key)
+                event.stop()
+                return
+            if event.key == "escape":
+                self.query_one("#prompt", Input).focus()
+                event.stop()
+                return
+
         prompt = self.query_one("#prompt", Input)
         if self.focused is not prompt:
             return
@@ -641,6 +650,73 @@ class GrahamApp(App[None]):
 
     def action_noop(self) -> None:
         return
+
+    def action_focus_details(self) -> None:
+        self.query_one("#details", Static).focus()
+
+    def action_focus_prompt(self) -> None:
+        self.query_one("#prompt", Input).focus()
+
+    def _scroll_details(self, key: str) -> None:
+        details = self.query_one("#details", Static)
+        if key == "up":
+            self._try_scroll(details, ("scroll_up", "action_scroll_up"), y=-1)
+            return
+        if key == "down":
+            self._try_scroll(details, ("scroll_down", "action_scroll_down"), y=1)
+            return
+        if key == "pageup":
+            self._try_scroll(details, ("scroll_page_up", "action_page_up"), y=-6)
+            return
+        if key == "pagedown":
+            self._try_scroll(details, ("scroll_page_down", "action_page_down"), y=6)
+            return
+        if key == "home":
+            self._try_scroll(details, ("scroll_home", "action_scroll_home"), y=0, home=True)
+            return
+        if key == "end":
+            self._try_scroll(details, ("scroll_end", "action_scroll_end"), y=10**9, end=True)
+            return
+
+    def _try_scroll(
+        self,
+        widget: Static,
+        method_names: tuple[str, ...],
+        *,
+        y: int,
+        home: bool = False,
+        end: bool = False,
+    ) -> None:
+        for method_name in method_names:
+            method = getattr(widget, method_name, None)
+            if not callable(method):
+                continue
+            try:
+                if method_name.startswith("scroll_") and method_name not in {"scroll_up", "scroll_down"}:
+                    method(animate=False)
+                else:
+                    method()
+                return
+            except TypeError:
+                try:
+                    method()
+                    return
+                except Exception:
+                    continue
+            except Exception:
+                continue
+
+        # Fallback for older/newer Textual APIs.
+        try:
+            if home:
+                widget.scroll_to(y=0, animate=False)
+                return
+            if end:
+                widget.scroll_to(y=10**9, animate=False)
+                return
+            widget.scroll_relative(y=y)
+        except Exception:
+            return
 
     def _apply_responsive_layout(self) -> None:
         narrow = self.size.width < 120
