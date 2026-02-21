@@ -27,29 +27,34 @@ class GrahamApp(App[None]):
     }
 
     #center {
-        height: 3fr;
+        height: auto;
         min-height: 8;
+        max-height: 14;
     }
 
     #ranking {
-        width: 5fr;
-        height: 1fr;
+        width: 1fr;
+        min-height: 8;
+        height: auto;
         border: round #4c956c;
         overflow: auto;
     }
 
     #details {
-        width: 2fr;
-        min-width: 30;
-        height: 1fr;
+        width: 36;
+        min-width: 26;
+        max-width: 42;
+        height: auto;
+        max-height: 14;
         border: round #bc4749;
         padding: 1 1;
         overflow-y: auto;
     }
 
     #log {
-        height: 2fr;
-        min-height: 4;
+        height: 1fr;
+        min-height: 3;
+        max-height: 10;
         border: round #386641;
     }
 
@@ -75,22 +80,23 @@ class GrahamApp(App[None]):
     @media (max-width: 120) {
         #center {
             layout: vertical;
+            max-height: 16;
         }
 
         #ranking {
             width: 1fr;
-            height: 1fr;
+            height: auto;
         }
 
         #details {
             width: 1fr;
             min-width: 0;
-            max-height: 10;
+            max-height: 8;
         }
 
         #log {
-            min-height: 4;
-            max-height: 9;
+            min-height: 3;
+            max-height: 8;
         }
     }
     """
