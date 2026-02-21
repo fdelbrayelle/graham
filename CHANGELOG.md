@@ -6,6 +6,14 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-02-21
+
+### Added
+- Clear `Features` section in `README.md` to highlight core product capabilities.
+
+### Changed
+- `/moat` LLM responses are now rendered as Markdown in the output panel for improved readability.
+
 ## [0.3.1] - 2026-02-21
 
 ### Added
