@@ -156,3 +156,49 @@ def test_scan_fundamentals_caches_yfinance_calls_for_15_minutes(monkeypatch) -> 
     current_time["value"] += 901
     engine.scan_fundamentals()
     assert calls["analyze"] == 2
+
+
+def test_scan_fundamentals_loads_tickers_in_batches_of_30(monkeypatch) -> None:
+    import graham.graham as graham_module
+
+    engine = GrahamEngine()
+    engine.set_universe([f"T{i:03d}" for i in range(65)])
+    batch_sizes: list[int] = []
+
+    class DummyTicker:
+        pass
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> DummyTicker:
+            return DummyTicker()
+
+    class FakeExecutor:
+        def __init__(self, max_workers: int) -> None:
+            self.max_workers = max_workers
+
+        def __enter__(self) -> "FakeExecutor":
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:
+            return False
+
+        def map(self, fn, iterable):
+            items = list(iterable)
+            batch_sizes.append(len(items))
+            return [fn(item) for item in items]
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_cache", lambda yf_module: None)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_logging", lambda: None)
+    monkeypatch.setattr(
+        graham_module,
+        "analyze_symbol",
+        lambda symbol, ticker, y, require_dividend: StockAnalysis(ticker=symbol, company_name=symbol, score=0.5),
+    )
+    monkeypatch.setattr(graham_module, "ThreadPoolExecutor", FakeExecutor)
+
+    ranked = engine.scan_fundamentals()
+
+    assert len(ranked) == 65
+    assert batch_sizes == [30, 30, 5]

@@ -32,6 +32,17 @@ def _resolve_scan_workers(symbol_count: int) -> int:
     return min(bounded, max(1, symbol_count))
 
 
+def _resolve_scan_batch_size() -> int:
+    configured = os.getenv("GRAHAM_SCAN_BATCH_SIZE", "").strip()
+    if not configured:
+        return 30
+    try:
+        value = int(configured)
+    except ValueError:
+        return 30
+    return max(1, value)
+
+
 def _ensure_writable_dir(path: Path) -> bool:
     try:
         path.mkdir(parents=True, exist_ok=True)
@@ -698,11 +709,14 @@ class GrahamEngine:
 
         next_analyses: dict[str, StockAnalysis] = {}
         max_workers = _resolve_scan_workers(len(symbols))
+        batch_size = _resolve_scan_batch_size()
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
-            for symbol, ticker, analysis in pool.map(_scan_one, symbols):
-                self._tickers[symbol] = ticker
-                next_analyses[symbol] = analysis
+            for start in range(0, len(symbols), batch_size):
+                batch = symbols[start : start + batch_size]
+                for symbol, ticker, analysis in pool.map(_scan_one, batch):
+                    self._tickers[symbol] = ticker
+                    next_analyses[symbol] = analysis
 
         self._analyses = next_analyses
         return rank_analyses(self.analyses)
