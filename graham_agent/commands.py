@@ -9,7 +9,7 @@ DEFAULT_SAMPLE = ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"]
 
 
 class CommandProcessor:
-    COMMANDS = ["/help", "/lang", "/model", "/universe", "/scan", "/screen", "/explain", "/export"]
+    COMMANDS = ["/help", "/lang", "/model", "/universe", "/scan", "/screen", "/explain", "/rating", "/export"]
     MODELS = ["none", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"]
     SCAN_OPTIONS = ["--top", "--min-score", "--refresh"]
     EXPORT_FORMATS = ["csv", "json"]
@@ -147,6 +147,23 @@ class CommandProcessor:
             output = self.app.export_results(export_format)
             return self._t(f"Export created: {output}")
 
+        if command == "/rating":
+            if not args:
+                green, orange = self.app.get_rating_thresholds()
+                return self._t(
+                    f"Rating thresholds: green>={green:.2f}, orange>={orange:.2f}, red<{orange:.2f}. "
+                    "Usage: /rating GREEN ORANGE (0..1 or 0..100)"
+                )
+            if len(args) != 2:
+                return self._t("Usage: /rating GREEN ORANGE (0..1 or 0..100)")
+            try:
+                green = float(args[0])
+                orange = float(args[1])
+            except ValueError:
+                return self._t("Invalid /rating values. Use numbers.")
+            success, message = self.app.set_rating_thresholds(green, orange)
+            return self._t(message) if not success else message
+
         return self._t(f"Unknown command: {command}. Type /help")
 
     def help_text(self) -> str:
@@ -171,6 +188,7 @@ class CommandProcessor:
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
+            "/rating GREEN ORANGE\n"
             "/export [csv|json]\n\n"
             + model_note
         )

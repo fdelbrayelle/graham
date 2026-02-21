@@ -103,6 +103,7 @@ Robustness policy:
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
 - `/explain [TICKER] [optional question]`
+- `/rating GREEN ORANGE`
 - `/export [csv|json]`
 
 # ✨ Autocompletion
@@ -149,6 +150,24 @@ Example:
 
 - Translation uses `deep-translator` (Google Translate backend), not LLMs.
 - If translation fails for any reason, the app keeps English text (safe fallback).
+
+# 🎯 Score Rating
+
+- The ranking now includes a visual rating badge:
+  - `🟢` if score is above the green threshold
+  - `🟠` if score is between orange and green thresholds
+  - `🔴` otherwise
+- Configure thresholds at runtime:
+
+```text
+/rating 0.80 0.60
+```
+
+You can also pass percentages:
+
+```text
+/rating 80 60
+```
 
 # 🗂️ Project Structure
 

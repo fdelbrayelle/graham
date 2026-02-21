@@ -16,6 +16,7 @@ from graham_agent.commands import CommandProcessor, discover_universe_names
 from graham_agent.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
 from graham_agent.i18n import DisplayTranslator
 from graham_agent.llm import LLMError, ask_model, fallback_explanation
+from graham_agent.settings import UserSettings, load_user_settings, save_user_settings
 
 
 class GrahamApp(App[None]):
@@ -96,6 +97,7 @@ class GrahamApp(App[None]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.settings: UserSettings = load_user_settings()
         self.engine = GrahamEngine(y=4.4, require_dividend=True)
         self.i18n = DisplayTranslator(language="en")
         self.language = "en"
@@ -110,6 +112,8 @@ class GrahamApp(App[None]):
         self._refreshing = False
         self._timer = None
         self._universe_note = "sample"
+        self.score_green_min = self.settings.score_green_min
+        self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
 
     def compose(self) -> ComposeResult:
@@ -146,6 +150,33 @@ class GrahamApp(App[None]):
         self._setup_table_columns()
         self.refresh_table()
         return True, self.tr(message)
+
+    def get_rating_thresholds(self) -> tuple[float, float]:
+        return self.score_green_min, self.score_orange_min
+
+    def set_rating_thresholds(self, green: float, orange: float) -> tuple[bool, str]:
+        if green > 1:
+            green = green / 100.0
+        if orange > 1:
+            orange = orange / 100.0
+        if green < 0 or orange < 0 or green > 1 or orange > 1:
+            return False, "Thresholds must be in [0..1] or percentages [0..100]."
+        if orange > green:
+            return False, "Orange threshold must be <= green threshold."
+
+        self.score_green_min = green
+        self.score_orange_min = orange
+        self.settings.score_green_min = green
+        self.settings.score_orange_min = orange
+        try:
+            save_user_settings(self.settings)
+        except Exception as exc:
+            return False, f"Thresholds updated but could not persist settings: {exc}"
+
+        self.refresh_table()
+        return True, (
+            f"Rating thresholds updated: green>={green:.2f}, orange>={orange:.2f}, red<{orange:.2f}"
+        )
 
     def write_log(self, message: str, translate: bool = True) -> None:
         logger = self.query_one("#log", RichLog)
@@ -392,6 +423,7 @@ class GrahamApp(App[None]):
                 str(rank),
                 item.ticker,
                 f"{item.score:.2f}",
+                self._score_badge(item.score),
                 format_metric(item.price),
                 format_metric(item.intrinsic_value),
                 format_metric(item.mos, percentage=True),
@@ -461,6 +493,7 @@ class GrahamApp(App[None]):
             self.tr("rank"),
             self.tr("ticker"),
             self.tr("score"),
+            self.tr("rating"),
             self.tr("price"),
             "V",
             "MoS",
@@ -468,6 +501,13 @@ class GrahamApp(App[None]):
             "P/B",
             self.tr("dividend"),
         )
+
+    def _score_badge(self, score: float) -> str:
+        if score >= self.score_green_min:
+            return "🟢"
+        if score >= self.score_orange_min:
+            return "🟠"
+        return "🔴"
 
 
 def run_tui() -> None:
