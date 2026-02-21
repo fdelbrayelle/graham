@@ -17,6 +17,7 @@ from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from graham.i18n import COMMON_LANGUAGE_CODES
+from graham.market_data import create_ticker, resolve_market_data_provider
 
 UNIVERSE_PRESETS: dict[str, list[str]] = {
     "sample": ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"],
@@ -697,13 +698,13 @@ class CommandProcessor:
     def help_text(self) -> str:
         if self.app.model == "none":
             model_note = (
-                "Model mode: none (deterministic). Explanations are generated locally from yfinance data.\n"
+                "Model mode: none (deterministic). Explanations are generated locally from market data.\n"
                 "No LLM call is made while model is set to none."
             )
         else:
             model_note = (
                 f"Model mode: {self.app.model} (LLM enabled).\n"
-                "The app uses yfinance for screening data and uses the configured LLM for /explain and /moat.\n"
+                "The app uses market data providers for screening and uses the configured LLM for /explain and /moat.\n"
                 "If the LLM call fails, the app falls back to a deterministic local explanation."
             )
 
@@ -979,10 +980,9 @@ class CommandProcessor:
         if cached is not None:
             return cached
 
-        import yfinance as yf
-
         spec = INDEX_SPECS[index_name]
         symbols = [str(item).strip() for item in spec.get("symbols", []) if str(item).strip()]
+        provider = resolve_market_data_provider()
         found: list[str] = []
         found_set: set[str] = set()
         company_overrides: dict[str, str] = {}
@@ -1021,9 +1021,10 @@ class CommandProcessor:
                 values.extend(nasdaq_values)
 
             try:
-                ticker_obj = yf.Ticker(symbol)
+                ticker_obj, source = create_ticker(symbol, provider=provider, yfinance_fallback=True)
             except Exception:
                 return symbol, values, notes
+            notes.append(f"{source}:{symbol}")
 
             extracted = self._extract_tickers_from_any(getattr(ticker_obj, "constituents", None))
             if not extracted:

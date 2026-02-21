@@ -48,7 +48,7 @@ https://github.com/user-attachments/assets/13609476-83ff-4abb-b83a-05ceda12e6ac
 
 ## 🧰 Prerequisites
 - Python 3.11+
-- Internet access (for yfinance and optional LLM calls)
+- Internet access (for market data providers and optional LLM calls)
 
 ## 🐧 Ubuntu
 ```bash
@@ -88,6 +88,11 @@ graham
 The app uses one input box at the bottom:
 - slash commands (`/help`, `/scan`, ...)
 - free prompt mode (if a ticker is selected, it behaves like `/explain <ticker> "..."`)
+
+Market data provider (optional):
+- default: `yfinance`
+- alternative: `defeatbeta-api` by setting `GRAHAM_MARKET_DATA_PROVIDER=defeatbeta`
+- if `defeatbeta-api` is unavailable, the app falls back to `yfinance`
 
 # ✅ Features
 
