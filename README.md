@@ -131,10 +131,11 @@ Robustness policy:
 
 - `/help`
 - `/universes`
+- `/indices [msci_world|msci_emerging|sp500|cac40|eurostoxx]`
 - `/languages`
 - `/lang [language-code]`
 - `/model [none|model-name]`
-- `/universe [sample|world|usa|emerging_markets|china|india|europe|france|japan|custom:path]`
+- `/universe [sample|world|usa|emerging_markets|china|india|germany|europe|france|japan|custom:path]`
 - `/default-universe [name|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
@@ -234,6 +235,7 @@ Available universe files now include:
 - `emerging_markets`
 - `china`
 - `india`
+- `germany`
 - `europe`
 - `france`
 - `japan`
@@ -250,6 +252,12 @@ List all universes with metadata:
 
 ```text
 /universes
+```
+
+Load a supported index and fetch constituents via yfinance:
+
+```text
+/indices sp500
 ```
 
 # 🗂️ Project Structure

@@ -1,0 +1,15 @@
+# Germany leaders (DAX style selection)
+SAP.DE
+SIE.DE
+ALV.DE
+BAS.DE
+BMW.DE
+MBG.DE
+DTE.DE
+MUV2.DE
+IFX.DE
+RWE.DE
+DB1.DE
+VOW3.DE
+DHL.DE
+ADS.DE

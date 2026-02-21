@@ -387,6 +387,7 @@ def analyze_symbol(
     except Exception as exc:
         return StockAnalysis(
             ticker=symbol,
+            company_name=symbol,
             notes=[f"yfinance loading error: {exc}"],
             criteria=[],
         )

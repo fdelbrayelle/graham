@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import os
+import re
 import shlex
 from pathlib import Path
+from typing import Any
 
 from graham_agent.i18n import COMMON_LANGUAGE_CODES
 
@@ -13,6 +16,7 @@ UNIVERSE_PRESETS: dict[str, list[str]] = {
     "emerging_markets": ["TSM", "BABA", "PDD", "MELI", "INFY", "VALE", "NU", "ITUB", "HDB", "NIO", "JD", "BIDU"],
     "china": ["BABA", "JD", "PDD", "BIDU", "TCOM", "NTES", "LI", "XPEV", "NIO", "TME", "BEKE", "BILI"],
     "india": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "ITC.NS", "HINDUNILVR.NS", "LT.NS", "SUNPHARMA.NS", "BHARTIARTL.NS", "MARUTI.NS", "BAJFINANCE.NS"],
+    "germany": ["SAP.DE", "SIE.DE", "ALV.DE", "BAS.DE", "BMW.DE", "MBG.DE", "DTE.DE", "MUV2.DE", "IFX.DE", "RWE.DE", "DB1.DE", "VOW3.DE", "DHL.DE", "ADS.DE"],
     "europe": ["ASML", "NVO", "SAP", "SHEL", "TTE", "SNY", "AZN", "UL", "BP", "RHHBY", "NESN.SW", "MC.PA"],
     "france": ["RMS.PA", "MC.PA", "AI.PA", "SU.PA", "TTE.PA", "SAN.PA", "OR.PA", "BNP.PA", "ENGI.PA", "DG.PA", "CAP.PA", "CS.PA", "KER.PA", "VIE.PA"],
     "japan": ["7203.T", "6758.T", "9984.T", "8035.T", "6501.T", "6861.T", "9432.T", "8306.T", "6098.T", "7974.T", "6367.T", "9433.T"],
@@ -24,6 +28,7 @@ UNIVERSE_PRESET_DESCRIPTIONS: dict[str, str] = {
     "emerging_markets": "Emerging markets mix",
     "china": "China large caps and leading ADRs",
     "india": "India leaders (NSE symbols)",
+    "germany": "Germany leaders (DAX style selection)",
     "europe": "Europe large caps",
     "france": "France CAC40 style selection",
     "japan": "Japan large caps",
@@ -41,11 +46,41 @@ UNIVERSE_ALIASES = {
     "chine": "china",
     "india": "india",
     "inde": "india",
+    "germany": "germany",
+    "allemagne": "germany",
     "europe": "europe",
     "france": "france",
     "japan": "japan",
     "japon": "japan",
 }
+INDEX_SPECS: dict[str, dict[str, Any]] = {
+    "msci_world": {
+        "description": "MSCI World (ETF proxy URTH)",
+        "symbols": ["URTH"],
+        "aliases": ["world", "msciworld", "msci-world"],
+    },
+    "msci_emerging": {
+        "description": "MSCI Emerging Markets (ETF proxy EEM/IEMG)",
+        "symbols": ["EEM", "IEMG"],
+        "aliases": ["emerging", "msciemerging", "msci-emerging"],
+    },
+    "sp500": {
+        "description": "S&P 500",
+        "symbols": ["^GSPC", "SPY", "IVV", "VOO"],
+        "aliases": ["s&p500", "s&p-500", "spx"],
+    },
+    "cac40": {
+        "description": "CAC 40",
+        "symbols": ["^FCHI", "CAC.PA", "EWQ"],
+        "aliases": ["cac", "cac-40"],
+    },
+    "eurostoxx": {
+        "description": "Euro Stoxx 50",
+        "symbols": ["^STOXX50E", "FEZ"],
+        "aliases": ["eurostoxx50", "stoxx50", "stoxx-50"],
+    },
+}
+PROBABLE_TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-=/]{0,14}$")
 
 
 def normalize_universe_spec(spec: str) -> str:
@@ -85,6 +120,7 @@ class CommandProcessor:
     COMMANDS = [
         "/help",
         "/universes",
+        "/indices",
         "/languages",
         "/lang",
         "/model",
@@ -167,6 +203,7 @@ class CommandProcessor:
                 "emerging_markets",
                 "china",
                 "india",
+                "germany",
                 "europe",
                 "france",
                 "japan",
@@ -184,6 +221,7 @@ class CommandProcessor:
                 "emerging_markets",
                 "china",
                 "india",
+                "germany",
                 "europe",
                 "france",
                 "japan",
@@ -191,6 +229,10 @@ class CommandProcessor:
             base.extend(self.app.available_universes())
             merged = self._unique_preserve_order(base)
             return [name for name in merged if name.startswith(current)]
+
+        if cmd == "/indices":
+            base = list(INDEX_SPECS.keys())
+            return [name for name in base if name.startswith(current.lower())]
 
         if cmd == "/export":
             return [fmt for fmt in self.EXPORT_FORMATS if fmt.startswith(current)]
@@ -227,6 +269,26 @@ class CommandProcessor:
 
         if command == "/universes":
             return self.list_universes_text()
+
+        if command == "/indices":
+            if not args:
+                return self.list_indices_text()
+            canonical = self._canonical_index_name(args[0])
+            if canonical is None:
+                return self._t(
+                    "Unknown index. Use /indices to list supported options."
+                )
+            tickers, note = await asyncio.to_thread(self._fetch_index_tickers, canonical)
+            if not tickers:
+                return self._t(f"Unable to fetch index constituents for {canonical}.")
+            remember_spec = self._persist_index_universe(canonical, tickers)
+            self.app.set_universe(tickers, note, remember_spec=remember_spec)
+            await self.app.run_scan(
+                top=self.app.scan_top,
+                min_score=self.app.scan_min_score,
+                refresh=self.app.refresh_seconds,
+            )
+            return self._t(f"Index loaded: {canonical} ({len(tickers)} tickers).")
 
         if command == "/languages":
             return self.list_languages_text()
@@ -364,10 +426,11 @@ class CommandProcessor:
             "Available commands:\n"
             "/help\n"
             "/universes\n"
+            "/indices [msci_world|msci_emerging|sp500|cac40|eurostoxx]\n"
             "/languages\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
-            "/universe [sample|world|usa|emerging_markets|china|india|europe|france|japan|custom:path]\n"
+            "/universe [sample|world|usa|emerging_markets|china|india|germany|europe|france|japan|custom:path]\n"
             "/default-universe [name|custom:path]\n"
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
             "/screen TICKERS_CSV\n"
@@ -401,6 +464,15 @@ class CommandProcessor:
         lines.append("")
         lines.append(self._t("Use /universe <name> to load now."))
         lines.append(self._t("Use /default-universe <name> to persist your default."))
+        return "\n".join(lines)
+
+    def list_indices_text(self) -> str:
+        lines = [self._t("Supported indices (fetched via yfinance):")]
+        for name, payload in INDEX_SPECS.items():
+            description = str(payload.get("description", name))
+            lines.append(f"- {name}: {self._t(description)}")
+        lines.append("")
+        lines.append(self._t("Use /indices <name> to load all detected constituents."))
         return "\n".join(lines)
 
     def list_languages_text(self) -> str:
@@ -559,6 +631,129 @@ class CommandProcessor:
             result.append(item)
         return result
 
+    def _canonical_index_name(self, raw_name: str) -> str | None:
+        value = raw_name.strip().lower()
+        if value in INDEX_SPECS:
+            return value
+        for name, payload in INDEX_SPECS.items():
+            aliases = payload.get("aliases", [])
+            if value in aliases:
+                return name
+        return None
+
+    def _fetch_index_tickers(self, index_name: str) -> tuple[list[str], str]:
+        import yfinance as yf
+
+        spec = INDEX_SPECS[index_name]
+        symbols = spec.get("symbols", [])
+        found: list[str] = []
+        for symbol in symbols:
+            try:
+                ticker_obj = yf.Ticker(symbol)
+            except Exception:
+                continue
+
+            extracted = self._extract_tickers_from_any(getattr(ticker_obj, "constituents", None))
+            if not extracted:
+                extracted = self._extract_tickers_from_funds_data(ticker_obj)
+            if not extracted:
+                extracted = self._extract_tickers_from_any(getattr(ticker_obj, "info", None))
+
+            for item in extracted:
+                normalized = item.strip().upper()
+                if normalized and normalized not in found:
+                    found.append(normalized)
+
+        note = f"index:{index_name}"
+        return found, note
+
+    def _extract_tickers_from_funds_data(self, ticker_obj: Any) -> list[str]:
+        values: list[str] = []
+        try:
+            funds_data = getattr(ticker_obj, "funds_data", None)
+            if funds_data is None:
+                getter = getattr(ticker_obj, "get_funds_data", None)
+                if callable(getter):
+                    funds_data = getter()
+            if funds_data is None:
+                return values
+            for attr in ("equity_holdings", "top_holdings", "bond_holdings", "holdings"):
+                data = getattr(funds_data, attr, None)
+                values.extend(self._extract_tickers_from_any(data))
+        except Exception:
+            return values
+        return values
+
+    def _extract_tickers_from_any(self, data: Any, depth: int = 0) -> list[str]:
+        if data is None or depth > 3:
+            return []
+
+        values: list[str] = []
+        if isinstance(data, str):
+            maybe = data.strip().upper()
+            if self._is_probable_ticker(maybe):
+                return [maybe]
+            return []
+
+        if isinstance(data, dict):
+            for key, value in data.items():
+                key_text = str(key).strip().upper()
+                if self._is_probable_ticker(key_text):
+                    values.append(key_text)
+                values.extend(self._extract_tickers_from_any(value, depth + 1))
+            return values
+
+        if isinstance(data, (list, tuple, set)):
+            for item in data:
+                values.extend(self._extract_tickers_from_any(item, depth + 1))
+            return values
+
+        columns = getattr(data, "columns", None)
+        index = getattr(data, "index", None)
+        if columns is not None and index is not None:
+            try:
+                frame = data
+                candidate_cols = [
+                    column
+                    for column in frame.columns
+                    if str(column).strip().lower() in {"symbol", "ticker", "holding", "code"}
+                ]
+                if candidate_cols:
+                    for column in candidate_cols:
+                        for item in frame[column].tolist():
+                            values.extend(self._extract_tickers_from_any(item, depth + 1))
+                if not values:
+                    for item in frame.index.tolist():
+                        values.extend(self._extract_tickers_from_any(item, depth + 1))
+                return values
+            except Exception:
+                return values
+
+        to_dict = getattr(data, "to_dict", None)
+        if callable(to_dict):
+            try:
+                payload = to_dict()
+                values.extend(self._extract_tickers_from_any(payload, depth + 1))
+            except Exception:
+                return values
+        return values
+
+    def _is_probable_ticker(self, value: str) -> bool:
+        if not value:
+            return False
+        if not PROBABLE_TICKER_RE.match(value):
+            return False
+        blocked = {"NAME", "SYMBOL", "COMPANY", "WEIGHT", "VALUE", "SECTOR", "COUNTRY"}
+        return value not in blocked
+
+    def _persist_index_universe(self, index_name: str, tickers: list[str]) -> str:
+        base_dir = Path.home() / ".graham" / "universes"
+        base_dir.mkdir(parents=True, exist_ok=True)
+        path = base_dir / f"index_{index_name}.txt"
+        lines = [f"# Auto-generated from yfinance for {index_name}", *tickers]
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        return f"custom:{path}"
+
 
 def discover_universe_names() -> list[str]:
     names: set[str] = set(UNIVERSE_PRESETS.keys())
@@ -566,4 +761,22 @@ def discover_universe_names() -> list[str]:
         if not base.exists():
             continue
         names.update(path.stem for path in base.glob("*.txt"))
-    return sorted(names)
+    preferred = [
+        "sample",
+        "world",
+        "usa",
+        "emerging_markets",
+        "china",
+        "india",
+        "germany",
+        "europe",
+        "france",
+        "japan",
+    ]
+    ordered: list[str] = []
+    for item in preferred:
+        if item in names:
+            ordered.append(item)
+            names.remove(item)
+    ordered.extend(sorted(names))
+    return ordered
