@@ -20,6 +20,10 @@ from graham.llm import LLMError, ask_model, fallback_explanation
 from graham.settings import UserSettings, load_user_settings, save_user_settings
 
 
+class DetailsPanel(Static):
+    can_focus = True
+
+
 class GrahamApp(App[None]):
     TITLE = "graham"
     BINDINGS = [
@@ -77,7 +81,8 @@ class GrahamApp(App[None]):
 
     #suggestions {
         display: none;
-        max-height: 3;
+        max-height: 8;
+        overflow-y: auto;
         border: round #6a994e;
     }
 
@@ -105,6 +110,35 @@ class GrahamApp(App[None]):
         min-height: 4;
     }
     """
+    SORTABLE_COLUMNS = (
+        "rank",
+        "ticker",
+        "company",
+        "score",
+        "rating",
+        "price",
+        "as_of",
+        "v",
+        "mos",
+        "pe",
+        "pb",
+        "dividend",
+    )
+    SORT_COLUMN_ALIASES = {
+        "asof": "as_of",
+        "as_of": "as_of",
+        "as_of_time": "as_of",
+        "price_time": "as_of",
+        "company_name": "company",
+        "symbol": "ticker",
+        "intrinsic": "v",
+        "intrinsic_value": "v",
+        "value": "v",
+        "margin_of_safety": "mos",
+        "pe_ratio": "pe",
+        "pb_ratio": "pb",
+        "dividend_rate": "dividend",
+    }
 
     def __init__(self) -> None:
         super().__init__()
@@ -131,6 +165,8 @@ class GrahamApp(App[None]):
         self._scan_spinner_frames = ["-", "\\", "|", "/"]
         self._scan_spinner_timer = None
         self._details_nav_mode = False
+        self._sort_column = "rank"
+        self._sort_reverse = False
         self.score_green_min = self.settings.score_green_min
         self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
@@ -139,7 +175,7 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield Static(self.tr("No row selected."), id="details")
+            yield DetailsPanel(self.tr("No row selected."), id="details")
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
@@ -395,6 +431,19 @@ class GrahamApp(App[None]):
             return
         self._show_details(analysis)
 
+    @on(DataTable.HeaderSelected, "#ranking")
+    def on_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        column_index = self._extract_header_column_index(event)
+        if column_index is None:
+            return
+        column = self._column_id_for_index(column_index)
+        if column is None:
+            return
+
+        success, message = self.set_sort(column)
+        if success:
+            self.write_log(message, translate=False)
+
     @on(Input.Changed, "#prompt")
     def on_input_changed(self, event: Input.Changed) -> None:
         self._suggestions = self.processor.suggestions(event.value)
@@ -492,6 +541,59 @@ class GrahamApp(App[None]):
             prefix = ">" if index == self._suggestion_index else " "
             lines.append(f"{prefix} {suggestion}")
         suggestion_view.update("\n".join(lines))
+        self._scroll_suggestion_cursor_into_view()
+
+    def _scroll_suggestion_cursor_into_view(self) -> None:
+        if not self._suggestions:
+            return
+
+        suggestion_view = self.query_one("#suggestions", Static)
+        viewport_height = 1
+        try:
+            viewport_height = max(1, int(suggestion_view.content_region.height))
+        except Exception:
+            viewport_height = 1
+
+        try:
+            top = int(getattr(suggestion_view, "scroll_y", 0))
+        except Exception:
+            top = 0
+
+        bottom = top + viewport_height - 1
+        target_top = top
+        if self._suggestion_index < top:
+            target_top = self._suggestion_index
+        elif self._suggestion_index > bottom:
+            target_top = self._suggestion_index - viewport_height + 1
+        else:
+            return
+
+        self._scroll_widget_to(suggestion_view, max(0, target_top))
+
+    def _scroll_widget_to(self, widget: Static, y: int) -> None:
+        try:
+            widget.scroll_to(y=y, animate=False)
+            return
+        except TypeError:
+            try:
+                widget.scroll_to(y=y)
+                return
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        try:
+            current = int(getattr(widget, "scroll_y", 0))
+        except Exception:
+            current = 0
+        delta = y - current
+        if delta == 0:
+            return
+        try:
+            widget.scroll_relative(y=delta)
+        except Exception:
+            return
 
     def _apply_suggestion(self) -> None:
         if not self._suggestions:
@@ -515,8 +617,9 @@ class GrahamApp(App[None]):
     def refresh_table(self) -> None:
         table = self.query_one("#ranking", DataTable)
         table.clear(columns=False)
+        sorted_results = self._sorted_results()
 
-        for rank, item in enumerate(self._current_results, start=1):
+        for rank, item in enumerate(sorted_results, start=1):
             table.add_row(
                 str(rank),
                 item.ticker,
@@ -533,11 +636,113 @@ class GrahamApp(App[None]):
                 key=item.ticker,
             )
 
-        if self._current_results:
-            first = self._current_results[0]
+        if sorted_results:
+            first = sorted_results[0]
             self._show_details(first)
         table.refresh(repaint=True, layout=True)
         self.refresh(repaint=True, layout=True)
+
+    def _extract_header_column_index(self, event: DataTable.HeaderSelected) -> int | None:
+        index = getattr(event, "column_index", None)
+        if isinstance(index, int):
+            return index
+
+        coordinate = getattr(event, "coordinate", None)
+        if coordinate is not None:
+            coord_index = getattr(coordinate, "column", None)
+            if isinstance(coord_index, int):
+                return coord_index
+        return None
+
+    def _column_id_for_index(self, index: int) -> str | None:
+        if 0 <= index < len(self.SORTABLE_COLUMNS):
+            return self.SORTABLE_COLUMNS[index]
+        return None
+
+    def available_sort_columns(self) -> list[str]:
+        return list(self.SORTABLE_COLUMNS)
+
+    def get_sort_state(self) -> tuple[str, str]:
+        direction = "desc" if self._sort_reverse else "asc"
+        return self._sort_column, direction
+
+    def set_sort(self, column: str, direction: str | None = None) -> tuple[bool, str]:
+        normalized = self._normalize_sort_column(column)
+        if normalized is None:
+            choices = ", ".join(self.SORTABLE_COLUMNS)
+            return False, f"Unknown sort column: {column}. Use one of: {choices}"
+
+        direction_value = (direction or "").strip().lower()
+        if direction_value and direction_value not in {"asc", "desc"}:
+            return False, "Sort direction must be 'asc' or 'desc'."
+
+        if direction_value:
+            reverse = direction_value == "desc"
+        elif self._sort_column == normalized:
+            reverse = not self._sort_reverse
+        else:
+            reverse = False
+
+        self._sort_column = normalized
+        self._sort_reverse = reverse
+        self.refresh_table()
+        final_direction = "desc" if reverse else "asc"
+        return True, f"Sorted by {normalized} ({final_direction})."
+
+    def _normalize_sort_column(self, column: str) -> str | None:
+        value = column.strip().lower()
+        if not value:
+            return None
+        cleaned = value.replace("-", "_").replace(" ", "_").replace("/", "")
+        canonical = self.SORT_COLUMN_ALIASES.get(cleaned, cleaned)
+        if canonical in self.SORTABLE_COLUMNS:
+            return canonical
+        return None
+
+    def _sorted_results(self) -> list[StockAnalysis]:
+        results = list(self._current_results)
+        if not results:
+            return results
+
+        if self._sort_column == "rank":
+            if self._sort_reverse:
+                results.reverse()
+            return results
+
+        present: list[StockAnalysis] = []
+        missing: list[StockAnalysis] = []
+        for item in results:
+            value = self._sort_value(item, self._sort_column)
+            if value is None or value == "":
+                missing.append(item)
+            else:
+                present.append(item)
+
+        present.sort(key=lambda item: self._sort_value(item, self._sort_column), reverse=self._sort_reverse)
+        return present + missing
+
+    def _sort_value(self, item: StockAnalysis, column: str) -> str | float | None:
+        if column == "ticker":
+            return item.ticker
+        if column == "company":
+            return (item.company_name or "").lower()
+        if column in {"score", "rating"}:
+            return item.score
+        if column == "price":
+            return item.price
+        if column == "as_of":
+            return item.price_time or ""
+        if column == "v":
+            return item.intrinsic_value
+        if column == "mos":
+            return item.mos
+        if column == "pe":
+            return item.pe
+        if column == "pb":
+            return item.pb
+        if column == "dividend":
+            return item.dividend_rate
+        return None
 
     def _show_details(self, analysis: StockAnalysis) -> None:
         self.selected_ticker = analysis.ticker
@@ -653,6 +858,7 @@ class GrahamApp(App[None]):
 
     def action_focus_details(self) -> None:
         self._details_nav_mode = True
+        self.query_one("#details", DetailsPanel).focus()
         self.write_log("Details navigation enabled (Esc or Ctrl+P to return to prompt).")
 
     def action_focus_prompt(self) -> None:

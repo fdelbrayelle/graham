@@ -282,6 +282,7 @@ class CommandProcessor:
         "/universe",
         "/default-universe",
         "/scan",
+        "/sort",
         "/screen",
         "/explain",
         "/rating",
@@ -319,6 +320,7 @@ class CommandProcessor:
     ]
     SCAN_OPTIONS = ["--top", "--min-score", "--refresh"]
     EXPORT_FORMATS = ["csv", "json"]
+    SORT_DIRECTIONS = ["asc", "desc"]
     LANGUAGE_CODES = COMMON_LANGUAGE_CODES
 
     def __init__(self, app: object) -> None:
@@ -395,6 +397,20 @@ class CommandProcessor:
         if cmd == "/scan":
             if current.startswith("--") or ends_with_space:
                 return [option for option in self.SCAN_OPTIONS if option.startswith(current)]
+            return []
+
+        if cmd == "/sort":
+            columns = self._sort_columns()
+            if len(parts) == 1 and ends_with_space:
+                return columns
+            if len(parts) == 2:
+                if ends_with_space:
+                    return self.SORT_DIRECTIONS
+                prefix = parts[1].lower()
+                return [name for name in columns if name.startswith(prefix)]
+            if len(parts) == 3:
+                prefix = "" if ends_with_space else parts[2].lower()
+                return [name for name in self.SORT_DIRECTIONS if name.startswith(prefix)]
             return []
 
         if cmd == "/explain":
@@ -504,6 +520,25 @@ class CommandProcessor:
                 f"refresh={self.app.refresh_seconds}s"
             )
 
+        if command == "/sort":
+            if not args:
+                get_state = getattr(self.app, "get_sort_state", None)
+                if callable(get_state):
+                    column, direction = get_state()
+                    return self._t(
+                        f"Current sort: {column} ({direction}). "
+                        "Usage: /sort COLUMN [asc|desc]"
+                    )
+                return self._t("Usage: /sort COLUMN [asc|desc]")
+            if len(args) > 2:
+                return self._t("Usage: /sort COLUMN [asc|desc]")
+            direction = args[1].lower() if len(args) == 2 else None
+            set_sort = getattr(self.app, "set_sort", None)
+            if not callable(set_sort):
+                return self._t("Sort command not supported by this UI build.")
+            success, message = set_sort(args[0], direction)
+            return self._t(message) if not success else message
+
         if command == "/default-universe":
             if not args:
                 return self._t(
@@ -588,6 +623,7 @@ class CommandProcessor:
             "/universe [sample|world|usa|emerging_markets|china|india|germany|europe|france|japan|custom:path]\n"
             "/default-universe [name|custom:path]\n"
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
+            "/sort COLUMN [asc|desc]\n"
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
             "/rating GREEN ORANGE\n"
@@ -786,6 +822,30 @@ class CommandProcessor:
             seen.add(item)
             result.append(item)
         return result
+
+    def _sort_columns(self) -> list[str]:
+        getter = getattr(self.app, "available_sort_columns", None)
+        if callable(getter):
+            try:
+                values = [str(item) for item in getter()]
+            except Exception:
+                values = []
+            if values:
+                return values
+        return [
+            "rank",
+            "ticker",
+            "company",
+            "score",
+            "rating",
+            "price",
+            "as_of",
+            "v",
+            "mos",
+            "pe",
+            "pb",
+            "dividend",
+        ]
 
     def _canonical_index_name(self, raw_name: str) -> str | None:
         value = raw_name.strip().lower()
