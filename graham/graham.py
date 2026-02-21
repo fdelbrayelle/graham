@@ -9,6 +9,8 @@ from pathlib import Path
 import time
 from typing import TYPE_CHECKING, Any
 
+from graham.market_data import create_ticker, resolve_market_data_provider
+
 if TYPE_CHECKING:
     import yfinance as yf
 
@@ -652,10 +654,16 @@ class GrahamEngine:
         self._company_name_overrides = normalized
 
     def scan_fundamentals(self) -> list[StockAnalysis]:
-        import yfinance as yf
+        provider = resolve_market_data_provider()
+        yfinance_module: Any | None = None
+        try:
+            import yfinance as yf
 
-        _configure_yfinance_cache(yf)
-        _configure_yfinance_logging()
+            yfinance_module = yf
+            _configure_yfinance_cache(yf)
+            _configure_yfinance_logging()
+        except Exception:
+            yfinance_module = None
 
         symbols = list(self.universe)
         if not symbols:
@@ -666,7 +674,17 @@ class GrahamEngine:
             cached = self._fundamentals_cache_get(symbol)
             ticker = self._tickers.get(symbol)
             if ticker is None and cached is None:
-                ticker = yf.Ticker(symbol)
+                if provider == "defeatbeta":
+                    try:
+                        ticker, _ = create_ticker(symbol, provider=provider, yfinance_fallback=True)
+                    except Exception:
+                        if yfinance_module is None:
+                            raise
+                        ticker = yfinance_module.Ticker(symbol)
+                else:
+                    if yfinance_module is None:
+                        raise RuntimeError("yfinance unavailable.")
+                    ticker = yfinance_module.Ticker(symbol)
             previous = self._analyses.get(symbol)
             if cached is not None:
                 analysis = cached

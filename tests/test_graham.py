@@ -202,3 +202,39 @@ def test_scan_fundamentals_loads_tickers_in_batches_of_30(monkeypatch) -> None:
 
     assert len(ranked) == 65
     assert batch_sizes == [30, 30, 5]
+
+
+def test_scan_fundamentals_uses_defeatbeta_provider_when_enabled(monkeypatch) -> None:
+    import graham.graham as graham_module
+
+    engine = GrahamEngine()
+    engine.set_universe(["AAPL"])
+    calls = {"create": 0}
+
+    class DummyTicker:
+        pass
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> DummyTicker:
+            return DummyTicker()
+
+    def fake_create_ticker(symbol: str, provider: str | None = None, yfinance_fallback: bool = True):
+        calls["create"] += 1
+        return DummyTicker(), "defeatbeta"
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_cache", lambda yf_module: None)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_logging", lambda: None)
+    monkeypatch.setattr(graham_module, "resolve_market_data_provider", lambda: "defeatbeta")
+    monkeypatch.setattr(graham_module, "create_ticker", fake_create_ticker)
+    monkeypatch.setattr(
+        graham_module,
+        "analyze_symbol",
+        lambda symbol, ticker, y, require_dividend: StockAnalysis(ticker=symbol, company_name=symbol, score=0.6),
+    )
+
+    ranked = engine.scan_fundamentals()
+
+    assert len(ranked) == 1
+    assert calls["create"] == 1
