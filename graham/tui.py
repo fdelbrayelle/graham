@@ -481,6 +481,7 @@ class GrahamApp(App[None]):
     @on(Input.Submitted, "#prompt")
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         if self._suggestions:
+            self._normalize_suggestion_index()
             current = event.value.strip()
             selected = self._suggestions[self._suggestion_index]
             if current != selected:
@@ -531,23 +532,29 @@ class GrahamApp(App[None]):
 
         if event.key == "down":
             if not self._suggestions and self._history_next(prompt):
+                event.prevent_default()
                 event.stop()
                 return
             if not self._suggestions:
                 return
-            self._suggestion_index = min(self._suggestion_index + 1, len(self._suggestions) - 1)
+            self._normalize_suggestion_index()
+            self._suggestion_index = (self._suggestion_index + 1) % len(self._suggestions)
             self._sync_suggestion_cursor()
+            event.prevent_default()
             event.stop()
             return
 
         if event.key == "up":
             if not self._suggestions and self._history_prev(prompt):
+                event.prevent_default()
                 event.stop()
                 return
             if not self._suggestions:
                 return
-            self._suggestion_index = max(self._suggestion_index - 1, 0)
+            self._normalize_suggestion_index()
+            self._suggestion_index = (self._suggestion_index - 1) % len(self._suggestions)
             self._sync_suggestion_cursor()
+            event.prevent_default()
             event.stop()
             return
 
@@ -555,6 +562,7 @@ class GrahamApp(App[None]):
             if not self._suggestions:
                 return
             self._apply_suggestion()
+            event.prevent_default()
             event.stop()
             return
 
@@ -575,12 +583,20 @@ class GrahamApp(App[None]):
 
     def _sync_suggestion_cursor(self) -> None:
         suggestion_view = self.query_one("#suggestions", Static)
+        self._normalize_suggestion_index()
         lines = []
         for index, suggestion in enumerate(self._suggestions):
             prefix = ">" if index == self._suggestion_index else " "
             lines.append(f"{prefix} {suggestion}")
         suggestion_view.update("\n".join(lines))
         self._scroll_suggestion_cursor_into_view()
+
+    def _normalize_suggestion_index(self) -> None:
+        if not self._suggestions:
+            self._suggestion_index = 0
+            return
+        if self._suggestion_index < 0 or self._suggestion_index >= len(self._suggestions):
+            self._suggestion_index = 0
 
     def _scroll_suggestion_cursor_into_view(self) -> None:
         if not self._suggestions:
