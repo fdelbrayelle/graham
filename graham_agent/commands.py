@@ -59,15 +59,55 @@ INDEX_SPECS: dict[str, dict[str, Any]] = {
         "symbols": ["URTH"],
         "aliases": ["world", "msciworld", "msci-world"],
     },
+    "msci_acwi": {
+        "description": "MSCI ACWI (ETF proxy ACWI)",
+        "symbols": ["ACWI"],
+        "aliases": ["acwi", "msciacwi", "msci-acwi"],
+    },
     "msci_emerging": {
         "description": "MSCI Emerging Markets (ETF proxy EEM/IEMG)",
         "symbols": ["EEM", "IEMG"],
         "aliases": ["emerging", "msciemerging", "msci-emerging"],
     },
+    "msci_eafe": {
+        "description": "MSCI EAFE (ETF proxy EFA/IEFA)",
+        "symbols": ["EFA", "IEFA"],
+        "aliases": ["eafe", "msci-eafe", "mscieafe"],
+    },
+    "msci_europe": {
+        "description": "MSCI Europe (ETF proxy VGK/IEUR)",
+        "symbols": ["VGK", "IEUR"],
+        "aliases": ["msci-europe", "mscieurope"],
+    },
+    "msci_china": {
+        "description": "MSCI China (ETF proxy MCHI)",
+        "symbols": ["MCHI"],
+        "aliases": ["china", "msci-china", "mscichina"],
+    },
     "sp500": {
         "description": "S&P 500",
         "symbols": ["^GSPC", "SPY", "IVV", "VOO"],
         "aliases": ["s&p500", "s&p-500", "spx"],
+    },
+    "dowjones": {
+        "description": "Dow Jones Industrial Average",
+        "symbols": ["^DJI", "DIA"],
+        "aliases": ["dow", "djia", "dow-jones"],
+    },
+    "nasdaq100": {
+        "description": "NASDAQ-100",
+        "symbols": ["^NDX", "QQQ", "QQQM"],
+        "aliases": ["nasdaq", "ndx", "nasdaq-100"],
+    },
+    "russell2000": {
+        "description": "Russell 2000",
+        "symbols": ["^RUT", "IWM"],
+        "aliases": ["russell", "rut", "russell-2000"],
+    },
+    "russell1000": {
+        "description": "Russell 1000",
+        "symbols": ["IWB"],
+        "aliases": ["russell-1000", "rut1000"],
     },
     "cac40": {
         "description": "CAC 40",
@@ -78,6 +118,121 @@ INDEX_SPECS: dict[str, dict[str, Any]] = {
         "description": "Euro Stoxx 50",
         "symbols": ["^STOXX50E", "FEZ"],
         "aliases": ["eurostoxx50", "stoxx50", "stoxx-50"],
+    },
+    "ftse100": {
+        "description": "FTSE 100",
+        "symbols": ["^FTSE", "ISF.L", "EWU"],
+        "aliases": ["ftse", "ftse-100"],
+    },
+    "dax40": {
+        "description": "DAX 40",
+        "symbols": ["^GDAXI", "EXS1.DE", "EWG"],
+        "aliases": ["dax", "dax-40"],
+    },
+    "stoxx600": {
+        "description": "STOXX Europe 600 (ETF proxy EXSA.DE/MEUD)",
+        "symbols": ["EXSA.DE", "MEUD.DE"],
+        "aliases": ["stoxx-600", "europe600", "stoxx_europe_600"],
+    },
+    "aex25": {
+        "description": "AEX 25 (Netherlands)",
+        "symbols": ["^AEX", "EWN"],
+        "aliases": ["aex", "aex-25"],
+    },
+    "mib40": {
+        "description": "FTSE MIB (Italy)",
+        "symbols": ["FTSEMIB.MI", "EWI"],
+        "aliases": ["ftsemib", "mib", "mib-40"],
+    },
+    "nikkei225": {
+        "description": "Nikkei 225",
+        "symbols": ["^N225", "EWJ"],
+        "aliases": ["nikkei", "nikkei-225"],
+    },
+    "topix": {
+        "description": "TOPIX",
+        "symbols": ["^TOPX", "TOPIX.JP"],
+        "aliases": ["topix-index"],
+    },
+    "hangseng": {
+        "description": "Hang Seng Index",
+        "symbols": ["^HSI", "2800.HK"],
+        "aliases": ["hsi", "hang-seng"],
+    },
+    "csi300": {
+        "description": "CSI 300 (ETF proxy ASHR)",
+        "symbols": ["000300.SS", "ASHR"],
+        "aliases": ["csi", "csi-300"],
+    },
+    "shanghai_comp": {
+        "description": "Shanghai Composite",
+        "symbols": ["000001.SS", "MCHI"],
+        "aliases": ["shanghai", "sse", "shcomp"],
+    },
+    "sensex": {
+        "description": "BSE SENSEX",
+        "symbols": ["^BSESN", "INDA"],
+        "aliases": ["bse", "bse-sensex"],
+    },
+    "nifty50": {
+        "description": "NIFTY 50",
+        "symbols": ["^NSEI", "INDY"],
+        "aliases": ["nifty", "nifty-50"],
+    },
+    "asx200": {
+        "description": "S&P/ASX 200",
+        "symbols": ["^AXJO", "EWA"],
+        "aliases": ["asx", "asx-200"],
+    },
+    "tsx60": {
+        "description": "S&P/TSX 60",
+        "symbols": ["^GSPTSE", "XIU.TO"],
+        "aliases": ["tsx", "tsx-60"],
+    },
+    "ibovespa": {
+        "description": "Ibovespa",
+        "symbols": ["^BVSP", "EWZ"],
+        "aliases": ["bovespa", "ibov"],
+    },
+    "ibex35": {
+        "description": "IBEX 35",
+        "symbols": ["^IBEX", "EWP"],
+        "aliases": ["ibex", "ibex-35"],
+    },
+    "omx_stockholm30": {
+        "description": "OMX Stockholm 30",
+        "symbols": ["^OMX", "EWD"],
+        "aliases": ["omxs30", "stockholm30", "omx-30"],
+    },
+    "smi20": {
+        "description": "Swiss Market Index",
+        "symbols": ["^SSMI", "EWL"],
+        "aliases": ["smi", "swiss-market-index"],
+    },
+    "kospi": {
+        "description": "KOSPI",
+        "symbols": ["^KS11", "EWY"],
+        "aliases": ["kospi-200"],
+    },
+    "taiex": {
+        "description": "TAIEX",
+        "symbols": ["^TWII", "EWT"],
+        "aliases": ["taiwan", "twii"],
+    },
+    "mexico_ipc": {
+        "description": "S&P/BMV IPC Mexico",
+        "symbols": ["^MXX", "EWW"],
+        "aliases": ["ipc", "mexico", "mexico-ipc"],
+    },
+    "south_africa_top40": {
+        "description": "South Africa Top 40 (ETF proxy EZA)",
+        "symbols": ["EZA"],
+        "aliases": ["jse", "jse-top40", "south-africa"],
+    },
+    "merval": {
+        "description": "MERVAL (Argentina)",
+        "symbols": ["^MERV"],
+        "aliases": ["argentina", "merv"],
     },
 }
 PROBABLE_TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-=/]{0,14}$")
@@ -426,7 +581,7 @@ class CommandProcessor:
             "Available commands:\n"
             "/help\n"
             "/universes\n"
-            "/indices [msci_world|msci_emerging|sp500|cac40|eurostoxx]\n"
+            "/indices [name]\n"
             "/languages\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
@@ -436,7 +591,8 @@ class CommandProcessor:
             "/screen TICKERS_CSV\n"
             "/explain [TICKER] [question]\n"
             "/rating GREEN ORANGE\n"
-            "/export [csv|json]\n\n"
+            "/export [csv|json]\n"
+            "Examples: /indices sp500, /indices msci_world, /indices dax40, /indices nikkei225\n\n"
             + model_note
         )
 

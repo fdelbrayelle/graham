@@ -131,7 +131,7 @@ Robustness policy:
 
 - `/help`
 - `/universes`
-- `/indices [msci_world|msci_emerging|sp500|cac40|eurostoxx]`
+- `/indices [name]` (examples: `sp500`, `msci_world`, `msci_emerging`, `dax40`, `nikkei225`, `csi300`)
 - `/languages`
 - `/lang [language-code]`
 - `/model [none|model-name]`
