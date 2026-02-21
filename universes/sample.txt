@@ -1,0 +1,9 @@
+# Univers d'exemple KISS
+AAPL
+MSFT
+JNJ
+PG
+KO
+XOM
+PEP
+MMM
