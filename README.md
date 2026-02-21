@@ -1,3 +1,5 @@
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/399019ea-9fa2-488b-9e9d-7e3067230fdd" />
+
 # 👤 Who Is Benjamin Graham?
 
 [Benjamin Graham](https://en.wikipedia.org/wiki/Benjamin_Graham) (1894-1976) is widely considered the father of value investing. He promoted disciplined stock selection based on financial strength, earnings quality, and buying at a discount to intrinsic value.
