@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
+import json
 import os
 import re
 import shlex
+from html import unescape
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.parse import quote, urlencode
+from urllib.request import Request, urlopen
 
 from graham.i18n import COMMON_LANGUAGE_CODES
 
@@ -236,6 +243,43 @@ INDEX_SPECS: dict[str, dict[str, Any]] = {
     },
 }
 PROBABLE_TICKER_RE = re.compile(r"^[A-Z0-9][A-Z0-9.\-=/]{0,14}$")
+NASDAQ_SYMBOL_RE = re.compile(r"^[A-Z0-9\-]{1,10}$")
+NASDAQ_QUOTE_API = "https://api.nasdaq.com/api/quote"
+ISHARES_PRODUCT_SCREENER_API = (
+    "https://www.ishares.com/us/product-screener/product-screener-v3.1.jsn"
+    "?dcrPath=/templatedata/config/product-screener-v3/data/en/us-ishares/"
+    "ishares-product-screener-backend-config&siteEntryPassthrough=true"
+)
+NIKKEI_COMPONENTS_URL = "https://indexes.nikkei.co.jp/en/nkave/index/component?idx=nk225"
+TOPIX_CONSTITUENTS_CSV_URL = (
+    "https://www.jpx.co.jp/english/markets/indices/topix/tvdivq0000001vg2-att/topixweight_j.csv"
+)
+MEDIAWIKI_PARSE_API = "https://en.wikipedia.org/w/api.php"
+INDEX_WIKIPEDIA_PAGES: dict[str, dict[str, Any]] = {
+    "dowjones": {
+        "page": "Dow_Jones_Industrial_Average",
+        "header_keywords": ("symbol", "ticker", "stock symbol"),
+    },
+    "cac40": {
+        "page": "CAC_40",
+        "header_keywords": ("ticker", "symbol", "epic"),
+        "default_suffix": ".PA",
+    },
+    "dax40": {
+        "page": "DAX",
+        "header_keywords": ("ticker", "symbol", "epic"),
+        "default_suffix": ".DE",
+    },
+    "eurostoxx": {
+        "page": "EURO_STOXX_50",
+        "header_keywords": ("ticker", "symbol", "epic"),
+    },
+    "nikkei225": {
+        "page": "Nikkei_225",
+        "header_keywords": ("ticker", "code", "symbol"),
+        "default_suffix": ".T",
+    },
+}
 
 
 def normalize_universe_spec(spec: str) -> str:
@@ -274,6 +318,7 @@ def find_universe_file(name: str) -> Path | None:
 class CommandProcessor:
     COMMANDS = [
         "/help",
+        "/keys",
         "/universes",
         "/indices",
         "/languages",
@@ -326,6 +371,8 @@ class CommandProcessor:
 
     def __init__(self, app: object) -> None:
         self.app = app
+        self._ishares_product_url_cache: dict[str, str | None] = {}
+        self._ishares_screener_payload: dict[str, Any] | None = None
 
     def suggestions(self, text: str) -> list[str]:
         value = text.strip()
@@ -442,6 +489,9 @@ class CommandProcessor:
 
         if command == "/help":
             return self.help_text()
+
+        if command == "/keys":
+            return self.shortcuts_text()
 
         if command == "/universes":
             return self.list_universes_text()
@@ -625,6 +675,7 @@ class CommandProcessor:
         return self._t(
             "Available commands:\n"
             "/help\n"
+            "/keys\n"
             "/universes\n"
             "/indices [name]\n"
             "/languages\n"
@@ -641,6 +692,19 @@ class CommandProcessor:
             "/export [csv|json]\n"
             "Examples: /indices sp500, /indices msci_world, /indices dax40, /indices nikkei225\n\n"
             + model_note
+        )
+
+    def shortcuts_text(self) -> str:
+        return self._t(
+            "Keyboard shortcuts:\n"
+            "F1: show this shortcuts list\n"
+            "Ctrl+L: clear output log panel\n"
+            "Ctrl+R: search ticker/company in the top table\n"
+            "Ctrl+D: focus details panel\n"
+            "Ctrl+P: focus prompt\n"
+            "Up/Down: navigate suggestions or prompt history\n"
+            "Tab: autocomplete suggestion\n"
+            "Enter: submit prompt or command"
         )
 
     def list_universes_text(self) -> str:
@@ -670,7 +734,7 @@ class CommandProcessor:
         return "\n".join(lines)
 
     def list_indices_text(self) -> str:
-        lines = [self._t("Supported indices (fetched via yfinance):")]
+        lines = [self._t("Supported indices (fetched dynamically via market data providers):")]
         for name, payload in INDEX_SPECS.items():
             description = str(payload.get("description", name))
             lines.append(f"- {name}: {self._t(description)}")
@@ -881,7 +945,34 @@ class CommandProcessor:
         spec = INDEX_SPECS[index_name]
         symbols = spec.get("symbols", [])
         found: list[str] = []
+        source_notes: list[str] = []
+
+        public_values, public_note = self._fetch_public_index_constituents(index_name)
+        if public_values:
+            source_notes.append(public_note)
+        for item in public_values:
+            normalized = self._normalize_ticker(item)
+            if normalized and normalized not in found:
+                found.append(normalized)
+
         for symbol in symbols:
+            if index_name.startswith("msci_"):
+                ishares_values = self._fetch_ishares_holdings(symbol)
+                if ishares_values:
+                    source_notes.append(f"ishares:{symbol}")
+                for item in ishares_values:
+                    normalized = self._normalize_ticker(item)
+                    if normalized and normalized not in found:
+                        found.append(normalized)
+
+            nasdaq_values = self._fetch_nasdaq_constituents(symbol)
+            if nasdaq_values:
+                source_notes.append(f"nasdaq:{symbol}")
+            for item in nasdaq_values:
+                normalized = self._normalize_ticker(item)
+                if normalized and normalized not in found:
+                    found.append(normalized)
+
             try:
                 ticker_obj = yf.Ticker(symbol)
             except Exception:
@@ -892,12 +983,614 @@ class CommandProcessor:
                 extracted = self._extract_tickers_from_funds_data(ticker_obj)
 
             for item in extracted:
-                normalized = item.strip().upper()
+                normalized = self._normalize_ticker(item)
                 if normalized and normalized not in found:
                     found.append(normalized)
 
         note = f"index:{index_name}"
+        if source_notes:
+            note = f"{note} ({', '.join(source_notes)})"
         return found, note
+
+    def _fetch_public_index_constituents(self, index_name: str) -> tuple[list[str], str]:
+        if index_name == "nikkei225":
+            values = self._fetch_nikkei_components()
+            if values:
+                return values, "nikkei:nk225"
+            values = self._fetch_wikipedia_components(index_name)
+            if values:
+                return values, "wikipedia:nikkei225"
+            return [], ""
+
+        if index_name == "topix":
+            values = self._fetch_topix_components()
+            if values:
+                return values, "jpx:topix"
+            return [], ""
+
+        if index_name in {"cac40", "dax40", "dowjones", "eurostoxx"}:
+            values = self._fetch_wikipedia_components(index_name)
+            if values:
+                return values, f"wikipedia:{index_name}"
+        return [], ""
+
+    def _fetch_nikkei_components(self) -> list[str]:
+        text = self._load_text(
+            NIKKEI_COMPONENTS_URL,
+            headers=self._http_headers(referer="https://indexes.nikkei.co.jp/en"),
+        )
+        if not text:
+            return []
+
+        codes = re.findall(r"<td[^>]*>\s*([1-9]\d{3})\s*</td>", text, flags=re.IGNORECASE)
+        if len(codes) < 180:
+            return []
+
+        found: list[str] = []
+        seen: set[str] = set()
+        for code in codes:
+            ticker = f"{code}.T"
+            normalized = self._normalize_ticker(ticker)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            found.append(normalized)
+        return found
+
+    def _fetch_topix_components(self) -> list[str]:
+        text = self._load_text(
+            TOPIX_CONSTITUENTS_CSV_URL,
+            headers=self._http_headers(referer="https://www.jpx.co.jp/english/"),
+        )
+        return self._extract_tokyo_tickers_from_csv_text(text)
+
+    def _fetch_wikipedia_components(self, index_name: str) -> list[str]:
+        payload = INDEX_WIKIPEDIA_PAGES.get(index_name)
+        if payload is None:
+            return []
+        page = str(payload.get("page", "")).strip()
+        if not page:
+            return []
+        params = urlencode(
+            {
+                "action": "parse",
+                "format": "json",
+                "formatversion": 2,
+                "prop": "text",
+                "page": page,
+            }
+        )
+        url = f"{MEDIAWIKI_PARSE_API}?{params}"
+        data = self._load_json(url, headers=self._http_headers(referer="https://en.wikipedia.org/"))
+        parse_node = data.get("parse")
+        if not isinstance(parse_node, dict):
+            return []
+        html = parse_node.get("text")
+        if not isinstance(html, str):
+            return []
+        return self._extract_wikipedia_tickers_from_html(index_name, html)
+
+    def _extract_tokyo_tickers_from_csv_text(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+        try:
+            rows = list(csv.reader(io.StringIO(text)))
+        except Exception:
+            return []
+        if len(rows) < 2:
+            return []
+
+        code_col = self._find_probable_stock_code_column(rows)
+        if code_col is None:
+            return []
+
+        found: list[str] = []
+        seen: set[str] = set()
+        for row in rows[1:]:
+            if code_col >= len(row):
+                continue
+            raw = row[code_col].strip().strip('"')
+            match = re.search(r"\b([1-9]\d{3})\b", raw)
+            if match is None:
+                continue
+            ticker = f"{match.group(1)}.T"
+            normalized = self._normalize_ticker(ticker)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            found.append(normalized)
+        return found
+
+    def _find_probable_stock_code_column(self, rows: list[list[str]]) -> int | None:
+        header = rows[0]
+        cleaned_headers = [self._normalized_header_value(item) for item in header]
+        for idx, value in enumerate(cleaned_headers):
+            if any(token in value for token in ("code", "ticker", "symbol")):
+                return idx
+
+        width = max((len(row) for row in rows), default=0)
+        if width <= 0:
+            return None
+
+        best_index: int | None = None
+        best_count = 0
+        for col in range(width):
+            count = 0
+            sample_size = 0
+            for row in rows[1:301]:
+                if col >= len(row):
+                    continue
+                sample_size += 1
+                raw = row[col].strip().strip('"')
+                if re.fullmatch(r"[1-9]\d{3}", raw):
+                    count += 1
+            if sample_size == 0:
+                continue
+            if count > best_count:
+                best_count = count
+                best_index = col
+
+        if best_count < 20:
+            return None
+        return best_index
+
+    def _normalized_header_value(self, value: str) -> str:
+        cleaned = value.strip().strip('"').lower()
+        return cleaned.replace("_", " ").replace("-", " ")
+
+    def _extract_wikipedia_tickers_from_html(self, index_name: str, html: str) -> list[str]:
+        spec = INDEX_WIKIPEDIA_PAGES.get(index_name)
+        if spec is None:
+            return []
+        keywords = tuple(str(item).lower() for item in spec.get("header_keywords", ()))
+        suffix = str(spec.get("default_suffix", "")).strip().upper()
+
+        tables = self._extract_wikitable_rows(html)
+        found: list[str] = []
+        seen: set[str] = set()
+
+        for table_rows in tables:
+            if len(table_rows) < 2:
+                continue
+            header = [self._normalized_header_value(cell) for cell in table_rows[0]]
+            target_columns = [
+                idx
+                for idx, item in enumerate(header)
+                if keywords and any(keyword in item for keyword in keywords)
+            ]
+            if not target_columns:
+                continue
+
+            for row in table_rows[1:]:
+                for col in target_columns:
+                    if col >= len(row):
+                        continue
+                    for token in self._extract_candidate_tickers(row[col]):
+                        normalized = self._normalize_index_specific_ticker(index_name, token, suffix)
+                        if not normalized or normalized in seen:
+                            continue
+                        seen.add(normalized)
+                        found.append(normalized)
+        return found
+
+    def _extract_wikitable_rows(self, html: str) -> list[list[list[str]]]:
+        tables: list[list[list[str]]] = []
+        table_matches = re.findall(
+            r"<table(?=[^>]*wikitable)[^>]*>(.*?)</table>",
+            html,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        for table_html in table_matches:
+            rows: list[list[str]] = []
+            row_matches = re.findall(r"<tr[^>]*>(.*?)</tr>", table_html, flags=re.IGNORECASE | re.DOTALL)
+            for row_html in row_matches:
+                cells = re.findall(
+                    r"<t[hd][^>]*>(.*?)</t[hd]>",
+                    row_html,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+                if not cells:
+                    continue
+                rows.append([self._clean_html_cell(cell) for cell in cells])
+            if rows:
+                tables.append(rows)
+        return tables
+
+    def _clean_html_cell(self, value: str) -> str:
+        text = re.sub(r"<br\s*/?>", " ", value, flags=re.IGNORECASE)
+        text = re.sub(r"</p>", " ", text, flags=re.IGNORECASE)
+        text = re.sub(r"<[^>]+>", " ", text)
+        text = unescape(text)
+        text = re.sub(r"\[[^\]]+\]", " ", text)
+        return " ".join(text.split())
+
+    def _extract_candidate_tickers(self, value: str) -> list[str]:
+        if not value:
+            return []
+        tokens = re.findall(r"\b[A-Z0-9][A-Z0-9.\-]{0,14}\b", value.upper())
+        cleaned: list[str] = []
+        for token in tokens:
+            if token in {"USD", "EUR", "ISIN", "CUSIP", "SEDOL"}:
+                continue
+            cleaned.append(token)
+        return cleaned
+
+    def _normalize_index_specific_ticker(self, index_name: str, token: str, suffix: str) -> str:
+        value = token.strip().upper()
+        if not value:
+            return ""
+        if index_name in {"nikkei225", "topix"} and re.fullmatch(r"[1-9]\d{3}", value):
+            value = f"{value}.T"
+        elif suffix and "." not in value and re.fullmatch(r"[A-Z0-9\-]{1,8}", value):
+            value = f"{value}{suffix}"
+
+        normalized = self._normalize_ticker(value)
+        if not normalized:
+            return ""
+
+        if index_name == "dowjones":
+            if "." in normalized:
+                return ""
+        if index_name == "eurostoxx":
+            if "." not in normalized:
+                return ""
+        return normalized
+
+    def _fetch_nasdaq_constituents(self, symbol: str) -> list[str]:
+        clean_symbol = symbol.strip().upper()
+        if not clean_symbol:
+            return []
+        if not self._is_nasdaq_symbol_candidate(clean_symbol):
+            return []
+
+        if clean_symbol.startswith("^"):
+            asset_classes = ("index", "stocks", "etf")
+        else:
+            asset_classes = ("etf", "stocks", "index")
+
+        for asset_class in asset_classes:
+            values = self._fetch_nasdaq_rows(clean_symbol, "holdings", asset_class)
+            if values:
+                return values
+
+        for asset_class in asset_classes:
+            values = self._fetch_nasdaq_rows(clean_symbol, "components", asset_class)
+            if values:
+                return values
+        return []
+
+    def _fetch_ishares_holdings(self, symbol: str) -> list[str]:
+        clean_symbol = symbol.strip().upper()
+        if not clean_symbol:
+            return []
+        if not self._is_ishares_symbol_candidate(clean_symbol):
+            return []
+
+        product_url = self._resolve_ishares_product_url(clean_symbol)
+        if not product_url:
+            return []
+
+        holdings_url = (
+            f"{product_url.rstrip('/')}/1467271812596.ajax"
+            f"?fileType=csv&fileName={clean_symbol}_holdings&dataType=fund"
+        )
+        text = self._load_text(holdings_url, headers=self._http_headers(referer=product_url))
+        if not text:
+            return []
+        return self._extract_tickers_from_csv_text(text)
+
+    def _resolve_ishares_product_url(self, symbol: str) -> str | None:
+        if symbol in self._ishares_product_url_cache:
+            return self._ishares_product_url_cache[symbol]
+
+        payload = self._load_ishares_screener_payload()
+        if not payload:
+            self._ishares_product_url_cache[symbol] = None
+            return None
+
+        url = self._find_ishares_product_url(payload, symbol)
+        self._ishares_product_url_cache[symbol] = url
+        return url
+
+    def _load_ishares_screener_payload(self) -> dict[str, Any]:
+        if self._ishares_screener_payload is not None:
+            return self._ishares_screener_payload
+
+        headers = self._http_headers(referer="https://www.ishares.com/us")
+        payload = self._load_json(ISHARES_PRODUCT_SCREENER_API, headers=headers)
+        if payload:
+            self._ishares_screener_payload = payload
+            return payload
+        self._ishares_screener_payload = {}
+        return {}
+
+    def _find_ishares_product_url(self, payload: dict[str, Any], symbol: str) -> str | None:
+        ticker_keys = (
+            "ticker",
+            "localExchangeTicker",
+            "fundTicker",
+            "symbol",
+            "exchangeTicker",
+            "displayTicker",
+        )
+        url_keys = (
+            "productPageUrl",
+            "productUrl",
+            "fundUrl",
+            "url",
+            "path",
+            "detailsPath",
+        )
+
+        stack: list[Any] = [payload]
+        seen: set[int] = set()
+
+        while stack:
+            node = stack.pop()
+            node_id = id(node)
+            if node_id in seen:
+                continue
+            seen.add(node_id)
+
+            if isinstance(node, dict):
+                if self._matches_symbol(node, ticker_keys, symbol):
+                    for key in url_keys:
+                        value = node.get(key)
+                        normalized_url = self._normalize_ishares_url(value)
+                        if normalized_url:
+                            return normalized_url
+                for value in node.values():
+                    if isinstance(value, (dict, list)):
+                        stack.append(value)
+                continue
+
+            if isinstance(node, list):
+                stack.extend(node)
+        return None
+
+    def _matches_symbol(self, payload: dict[str, Any], keys: tuple[str, ...], target: str) -> bool:
+        target_upper = target.strip().upper()
+        for key in keys:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip().upper() == target_upper:
+                return True
+        return False
+
+    def _normalize_ishares_url(self, value: Any) -> str | None:
+        if not isinstance(value, str):
+            return None
+        text = value.strip()
+        if not text:
+            return None
+        if "/products/" not in text:
+            return None
+        if text.startswith("/"):
+            text = f"https://www.ishares.com{text}"
+        if not text.startswith("http"):
+            return None
+        return text.split("?", 1)[0].split("#", 1)[0]
+
+    def _extract_tickers_from_csv_text(self, text: str) -> list[str]:
+        if not text.strip():
+            return []
+        try:
+            rows = list(csv.reader(io.StringIO(text)))
+        except Exception:
+            return []
+        if not rows:
+            return []
+
+        header_index = -1
+        symbol_column = -1
+        expected = {
+            "ticker",
+            "symbol",
+            "holding ticker",
+            "holding symbol",
+            "issuer ticker",
+        }
+        for index, row in enumerate(rows):
+            normalized_headers = [item.strip().strip('"').lower() for item in row]
+            for col_index, header in enumerate(normalized_headers):
+                if header in expected:
+                    header_index = index
+                    symbol_column = col_index
+                    break
+            if header_index >= 0:
+                break
+        if header_index < 0 or symbol_column < 0:
+            return []
+
+        found: list[str] = []
+        seen: set[str] = set()
+        for row in rows[header_index + 1 :]:
+            if symbol_column >= len(row):
+                continue
+            raw = row[symbol_column].strip().strip('"')
+            normalized = self._normalize_ticker(raw)
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            found.append(normalized)
+        return found
+
+    def _fetch_nasdaq_rows(self, symbol: str, endpoint: str, asset_class: str) -> list[str]:
+        encoded_symbol = quote(symbol, safe="")
+        headers = self._http_headers(referer="https://www.nasdaq.com/")
+
+        out: list[str] = []
+        seen: set[str] = set()
+        limit = 250
+        offset = 0
+
+        for _ in range(20):
+            params = urlencode(
+                {
+                    "assetclass": asset_class,
+                    "limit": limit,
+                    "offset": offset,
+                }
+            )
+            url = f"{NASDAQ_QUOTE_API}/{encoded_symbol}/{endpoint}?{params}"
+            payload = self._load_json(url, headers=headers)
+            if not payload:
+                break
+            rows, total = self._nasdaq_rows_and_total(payload)
+            if not rows:
+                break
+
+            before = len(seen)
+            for row in rows:
+                ticker = self._extract_symbol_from_nasdaq_row(row)
+                normalized = self._normalize_ticker(ticker)
+                if not normalized or normalized in seen:
+                    continue
+                seen.add(normalized)
+                out.append(normalized)
+
+            if len(seen) == before:
+                break
+            if total is not None and len(seen) >= total:
+                break
+            if len(rows) < limit:
+                break
+            offset += limit
+        return out
+
+    def _load_json(self, url: str, headers: dict[str, str]) -> dict[str, Any]:
+        request = Request(url, headers=headers)
+        try:
+            with urlopen(request, timeout=4) as response:
+                raw = response.read()
+        except (URLError, TimeoutError, OSError):
+            return {}
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            return {}
+        if isinstance(payload, dict):
+            return payload
+        return {}
+
+    def _load_text(self, url: str, headers: dict[str, str]) -> str:
+        request = Request(url, headers=headers)
+        try:
+            with urlopen(request, timeout=5) as response:
+                raw = response.read()
+        except (URLError, TimeoutError, OSError):
+            return ""
+        try:
+            return raw.decode("utf-8", errors="ignore")
+        except Exception:
+            return ""
+
+    def _http_headers(self, referer: str) -> dict[str, str]:
+        return {
+            "User-Agent": (
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            ),
+            "Accept": "application/json, text/plain, */*",
+            "Referer": referer,
+        }
+
+    def _nasdaq_rows_and_total(self, payload: dict[str, Any]) -> tuple[list[Any], int | None]:
+        data = payload.get("data")
+        if not isinstance(data, dict):
+            return [], None
+
+        candidate_nodes: list[Any] = [data]
+        for key in ("holdings", "components", "constituents", "participants"):
+            value = data.get(key)
+            if value is not None:
+                candidate_nodes.append(value)
+
+        for node in candidate_nodes:
+            rows, total = self._rows_and_total_from_node(node)
+            if rows:
+                return rows, total
+        return [], None
+
+    def _rows_and_total_from_node(self, node: Any) -> tuple[list[Any], int | None]:
+        if isinstance(node, list):
+            return node, None
+        if not isinstance(node, dict):
+            return [], None
+
+        rows = node.get("rows")
+        if not isinstance(rows, list):
+            return [], None
+
+        total = self._parse_optional_int(
+            node.get("totalRecords")
+            or node.get("totalrecords")
+            or node.get("total")
+            or node.get("count")
+        )
+        return rows, total
+
+    def _parse_optional_int(self, value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            cleaned = value.replace(",", "").strip()
+            if cleaned.isdigit():
+                return int(cleaned)
+        return None
+
+    def _extract_symbol_from_nasdaq_row(self, row: Any) -> str:
+        if isinstance(row, str):
+            return row
+        if not isinstance(row, dict):
+            return ""
+
+        keys = (
+            "symbol",
+            "ticker",
+            "holdingSymbol",
+            "securitySymbol",
+            "holdingTicker",
+            "code",
+        )
+        for key in keys:
+            value = row.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return ""
+
+    def _is_nasdaq_symbol_candidate(self, symbol: str) -> bool:
+        if symbol.startswith("^"):
+            return True
+        if NASDAQ_SYMBOL_RE.match(symbol):
+            return True
+        if "." not in symbol:
+            return False
+        root, suffix = symbol.rsplit(".", 1)
+        if not root or not suffix:
+            return False
+        # Allow US share-class notation (BRK.B, BF.B).
+        return bool(root.isalpha() and len(suffix) == 1 and suffix.isalpha())
+
+    def _is_ishares_symbol_candidate(self, symbol: str) -> bool:
+        if not symbol:
+            return False
+        if symbol.startswith("^"):
+            return False
+        return bool(re.fullmatch(r"[A-Z0-9.\-]{1,12}", symbol))
+
+    def _normalize_ticker(self, value: str) -> str:
+        normalized = value.strip().upper()
+        if not normalized:
+            return ""
+        if "." in normalized:
+            root, suffix = normalized.rsplit(".", 1)
+            if root and len(suffix) == 1 and root.isalpha():
+                normalized = f"{root}-{suffix}"
+        if not self._is_probable_ticker(normalized):
+            return ""
+        return normalized
 
     def _extract_tickers_from_funds_data(self, ticker_obj: Any) -> list[str]:
         values: list[str] = []
@@ -990,7 +1683,7 @@ class CommandProcessor:
         base_dir = Path.home() / ".graham" / "universes"
         base_dir.mkdir(parents=True, exist_ok=True)
         path = base_dir / f"index_{index_name}.txt"
-        lines = [f"# Auto-generated from yfinance for {index_name}", *tickers]
+        lines = [f"# Auto-generated from dynamic market data providers for {index_name}", *tickers]
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
         return f"custom:{path}"
 

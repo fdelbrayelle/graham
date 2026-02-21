@@ -138,6 +138,7 @@ Robustness policy:
 # 🧭 Slash Commands
 
 - `/help`
+- `/keys`
 - `/universes`
 - `/indices [name]` (examples: `sp500`, `msci_world`, `msci_emerging`, `dax40`, `nikkei225`, `csi300`)
 - `/languages`
@@ -165,9 +166,12 @@ Context-aware autocompletion in the input overlay:
 - `/moat` -> current universe tickers
 
 Keyboard:
+- `F1` show keyboard shortcuts
 - `↑` `↓` move in suggestions (or prompt history when no suggestion list is visible)
 - `TAB` complete
 - `ENTER` accept
+- `Ctrl+L` clear output log panel
+- `Ctrl+R` search/filter by ticker or company in the top ranking table
 
 Mouse:
 - click a block in the output log to copy it

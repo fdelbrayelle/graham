@@ -17,11 +17,14 @@ from textual.containers import Horizontal, Vertical
 from textual.events import Click, Key, Resize
 from textual.widgets import DataTable, Header, Input, RichLog, Static
 
+from graham.command_feedback import command_result_feedback, command_start_feedback
 from graham.commands import CommandProcessor, discover_universe_names
+from graham.completion import apply_completion
 from graham.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
 from graham.i18n import DisplayTranslator
 from graham.llm import LLMError, ask_model, build_moat_prompt, fallback_explanation
-from graham.settings import UserSettings, load_user_settings, save_user_settings
+from graham.search import matches_ticker_or_company_query
+from graham.settings import UserSettings, load_persisted_language, load_user_settings, save_user_settings
 
 
 class DetailsPanel(Static):
@@ -36,6 +39,9 @@ class GrahamApp(App[None]):
         Binding("ctrl+q", "noop", "", show=False, priority=True),
         Binding("ctrl+d", "focus_details", "Details", show=False, priority=True),
         Binding("ctrl+p", "focus_prompt", "Prompt", show=False, priority=True),
+        Binding("ctrl+l", "clear_outputs", "Clear Outputs", show=False, priority=True),
+        Binding("ctrl+r", "search_tickers", "Search Tickers", show=False, priority=True),
+        Binding("f1", "show_shortcuts", "Shortcuts", show=False, priority=True),
     ]
     CSS = """
     Screen {
@@ -178,6 +184,9 @@ class GrahamApp(App[None]):
         self._details_nav_mode = False
         self._sort_column = "rank"
         self._sort_reverse = False
+        self._ticker_search_mode = False
+        self._ticker_search_query = ""
+        self._ticker_search_draft = ""
         self.score_green_min = self.settings.score_green_min
         self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
@@ -399,7 +408,8 @@ class GrahamApp(App[None]):
             return self.tr("Usage: /moat TICKER")
 
         self.write_log(f"Generating moat analysis for {symbol} with model {self.model}...", translate=False)
-        prompt = build_moat_prompt(symbol, self.language)
+        language_for_prompt = load_persisted_language(self.language)
+        prompt = build_moat_prompt(symbol, language_for_prompt)
         try:
             response = await asyncio.to_thread(ask_model, self.model, "", prompt, 60)
         except LLMError as exc:
@@ -507,6 +517,13 @@ class GrahamApp(App[None]):
 
     @on(Input.Changed, "#prompt")
     def on_input_changed(self, event: Input.Changed) -> None:
+        if self._ticker_search_mode:
+            self._ticker_search_query = event.value.strip().upper()
+            self._suggestions = []
+            self._hide_suggestions()
+            self.refresh_table()
+            return
+
         if self._suppress_suggestions_once:
             self._suppress_suggestions_once = False
             return
@@ -518,16 +535,28 @@ class GrahamApp(App[None]):
 
     @on(Input.Submitted, "#prompt")
     async def on_input_submitted(self, event: Input.Submitted) -> None:
-        if self._suggestions:
-            self._normalize_suggestion_index()
-            current = event.value.strip()
-            selected = self._suggestions[self._suggestion_index]
-            if current != selected:
-                self._apply_suggestion()
-                return
-            self._hide_suggestions()
+        if self._ticker_search_mode:
+            query = event.value.strip().upper()
+            self._ticker_search_query = query
+            self.refresh_table()
+            self._stop_ticker_search(keep_filter=bool(query))
+            matches = len(self._filtered_sorted_results())
+            if query:
+                self.write_log(f"Ticker filter: {query} ({matches} matches)", translate=False)
+            else:
+                self.write_log("Ticker filter cleared.", translate=False)
+            return
 
         line = event.value.strip()
+        if self._suggestions:
+            self._normalize_suggestion_index()
+            selected = self._suggestions[self._suggestion_index]
+            if line != selected:
+                self._apply_suggestion()
+                line = self.query_one("#prompt", Input).value.strip()
+            else:
+                self._hide_suggestions()
+
         self.query_one("#prompt", Input).value = ""
         self._hide_suggestions()
 
@@ -538,12 +567,20 @@ class GrahamApp(App[None]):
         self.write_log(f"> {line}")
 
         if line.startswith("/"):
+            started_message = command_start_feedback(line)
+            if started_message:
+                self.notify(started_message, severity="information")
+                self.write_log(started_message, translate=False)
             try:
                 response = await self.processor.execute(line)
             except Exception as exc:
                 response = f"Command error: {exc}"
             if response:
                 self.write_log(response, translate=False)
+                result_feedback = command_result_feedback(line, response)
+                if result_feedback is not None:
+                    message, severity = result_feedback
+                    self.notify(message, severity=severity)
             return
 
         if self.selected_ticker:
@@ -566,6 +603,13 @@ class GrahamApp(App[None]):
 
         prompt = self.query_one("#prompt", Input)
         if self.focused is not prompt:
+            return
+        if self._ticker_search_mode:
+            if event.key == "escape":
+                self._stop_ticker_search(keep_filter=False)
+                self.notify(self.tr("Ticker search cancelled."), severity="information")
+                event.prevent_default()
+                event.stop()
             return
         history_active = self._prompt_history_index is not None
         if not history_active and not self._suggestions and prompt.value.strip().startswith("/"):
@@ -722,14 +766,7 @@ class GrahamApp(App[None]):
 
         selected = self._suggestions[self._suggestion_index]
         prompt = self.query_one("#prompt", Input)
-        current = prompt.value
-        trimmed = current.rstrip()
-
-        if " " in trimmed:
-            head, _, _ = trimmed.rpartition(" ")
-            prompt.value = f"{head} {selected}" if head else selected
-        else:
-            prompt.value = selected
+        prompt.value = apply_completion(prompt.value, selected)
 
         prompt.cursor_position = len(prompt.value)
         self._hide_suggestions()
@@ -884,7 +921,7 @@ class GrahamApp(App[None]):
     def refresh_table(self) -> None:
         table = self.query_one("#ranking", DataTable)
         table.clear(columns=False)
-        sorted_results = self._sorted_results()
+        sorted_results = self._filtered_sorted_results()
 
         for rank, item in enumerate(sorted_results, start=1):
             table.add_row(
@@ -906,8 +943,24 @@ class GrahamApp(App[None]):
         if sorted_results:
             first = sorted_results[0]
             self._show_details(first)
+        else:
+            self._details_text = self.tr("No row selected.")
+            self.query_one("#details", Static).update(self._details_text)
         table.refresh(repaint=True, layout=True)
         self.refresh(repaint=True, layout=True)
+
+    def _filtered_sorted_results(self) -> list[StockAnalysis]:
+        sorted_results = self._sorted_results()
+        if not self._ticker_search_query:
+            return sorted_results
+        query = self._ticker_search_query.strip().upper()
+        if not query:
+            return sorted_results
+        return [
+            item
+            for item in sorted_results
+            if matches_ticker_or_company_query(item.ticker, item.company_name, query)
+        ]
 
     def _extract_header_column_index(self, event: DataTable.HeaderSelected) -> int | None:
         index = getattr(event, "column_index", None)
@@ -1132,6 +1185,43 @@ class GrahamApp(App[None]):
     def action_focus_prompt(self) -> None:
         self._details_nav_mode = False
         self.query_one("#prompt", Input).focus()
+
+    def action_clear_outputs(self) -> None:
+        logger = self.query_one("#log", RichLog)
+        logger.clear()
+        self._log_blocks = []
+        if not self._scan_loading:
+            logger.border_title = ""
+        self.notify(self.tr("Output panel cleared."), severity="information")
+
+    def action_show_shortcuts(self) -> None:
+        self.write_log(self.processor.shortcuts_text(), translate=False)
+        self.notify(self.tr("Shortcuts written to output."), severity="information")
+
+    def action_search_tickers(self) -> None:
+        if self._ticker_search_mode:
+            self._stop_ticker_search(keep_filter=False)
+            self.notify(self.tr("Ticker search cleared."), severity="information")
+            return
+        self._start_ticker_search()
+
+    def _start_ticker_search(self) -> None:
+        prompt = self.query_one("#prompt", Input)
+        self._ticker_search_mode = True
+        self._ticker_search_draft = prompt.value
+        self._set_prompt_value(self._ticker_search_query)
+        prompt.placeholder = self.tr("Search tickers (Enter to apply, Esc to cancel)")
+        prompt.focus()
+        self.notify(self.tr("Ticker search mode enabled."), severity="information")
+
+    def _stop_ticker_search(self, keep_filter: bool) -> None:
+        prompt = self.query_one("#prompt", Input)
+        self._ticker_search_mode = False
+        if not keep_filter:
+            self._ticker_search_query = ""
+            self.refresh_table()
+        self._set_prompt_value(self._ticker_search_draft)
+        prompt.placeholder = self.tr("Type /help")
 
     def _scroll_details(self, key: str) -> None:
         details = self.query_one("#details", Static)

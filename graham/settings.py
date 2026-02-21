@@ -54,6 +54,22 @@ def save_user_settings(settings: UserSettings) -> None:
     path.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")
 
 
+def load_persisted_language(default: str = "en") -> str:
+    fallback = (default or "en").strip().lower() or "en"
+    path = settings_path()
+    if not path.exists():
+        return fallback
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return fallback
+    value = payload.get("default_language")
+    if not isinstance(value, str):
+        return fallback
+    normalized = value.strip().lower()
+    return normalized or fallback
+
+
 def _safe_ratio(value: object, default: float) -> float:
     try:
         number = float(value)

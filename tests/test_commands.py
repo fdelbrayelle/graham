@@ -26,9 +26,28 @@ def test_moat_suggestions_use_current_tickers() -> None:
     assert processor.suggestions("/moat M") == ["MSFT"]
 
 
+def test_command_suggestions_include_keys() -> None:
+    processor = CommandProcessor(DummyApp())
+    assert "/keys" in processor.suggestions("/k")
+
+
 def test_help_mentions_moat() -> None:
     processor = CommandProcessor(DummyApp())
     assert "/moat TICKER" in processor.help_text()
+
+
+def test_help_mentions_keys_command() -> None:
+    processor = CommandProcessor(DummyApp())
+    assert "/keys" in processor.help_text()
+
+
+def test_execute_keys_returns_shortcuts_text() -> None:
+    processor = CommandProcessor(DummyApp())
+    result = asyncio.run(processor.execute("/keys"))
+    assert "Keyboard shortcuts:" in result
+    assert "Ctrl+L" in result
+    assert "Ctrl+R" in result
+    assert "F1" in result
 
 
 def test_execute_moat_requires_one_ticker() -> None:
