@@ -812,8 +812,6 @@ class CommandProcessor:
             extracted = self._extract_tickers_from_any(getattr(ticker_obj, "constituents", None))
             if not extracted:
                 extracted = self._extract_tickers_from_funds_data(ticker_obj)
-            if not extracted:
-                extracted = self._extract_tickers_from_any(getattr(ticker_obj, "info", None))
 
             for item in extracted:
                 normalized = item.strip().upper()
@@ -852,11 +850,19 @@ class CommandProcessor:
             return []
 
         if isinstance(data, dict):
-            for key, value in data.items():
+            for value in data.values():
+                values.extend(self._extract_tickers_from_any(value, depth + 1))
+            if values:
+                return values
+
+            # Fallback for maps like {"AAPL": 0.07, ...} where keys are tickers.
+            keys: list[str] = []
+            for key in data.keys():
                 key_text = str(key).strip().upper()
                 if self._is_probable_ticker(key_text):
-                    values.append(key_text)
-                values.extend(self._extract_tickers_from_any(value, depth + 1))
+                    keys.append(key_text)
+            if len(keys) >= 3:
+                return keys
             return values
 
         if isinstance(data, (list, tuple, set)):

@@ -1,5 +1,6 @@
 from graham.graham import (
     CriterionResult,
+    GrahamEngine,
     PASS,
     NA,
     StockAnalysis,
@@ -35,3 +36,13 @@ def test_ranking_order() -> None:
     c = StockAnalysis(ticker="CCC", score=0.6, mos=0.5, pe=5.0)
     ranked = rank_analyses([a, b, c])
     assert [item.ticker for item in ranked] == ["BBB", "AAA", "CCC"]
+
+
+def test_engine_analyses_follow_active_universe() -> None:
+    engine = GrahamEngine()
+    engine._analyses = {
+        "AAA": StockAnalysis(ticker="AAA", score=0.2),
+        "BBB": StockAnalysis(ticker="BBB", score=0.3),
+    }
+    engine.set_universe(["BBB"])
+    assert [item.ticker for item in engine.analyses] == ["BBB"]

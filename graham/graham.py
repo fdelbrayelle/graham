@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
@@ -517,7 +518,7 @@ class GrahamEngine:
 
     @property
     def analyses(self) -> list[StockAnalysis]:
-        return list(self._analyses.values())
+        return [self._analyses[symbol] for symbol in self.universe if symbol in self._analyses]
 
     def set_universe(self, symbols: list[str]) -> list[str]:
         cleaned: list[str] = []
@@ -529,22 +530,48 @@ class GrahamEngine:
             seen.add(item)
             cleaned.append(item)
         self.universe = cleaned
+        # Keep only analyses that belong to the active universe.
+        self._analyses = {symbol: self._analyses[symbol] for symbol in cleaned if symbol in self._analyses}
         return self.universe
 
     def scan_fundamentals(self) -> list[StockAnalysis]:
         import yfinance as yf
 
-        for symbol in self.universe:
+        symbols = list(self.universe)
+        if not symbols:
+            self._analyses = {}
+            return []
+
+        def _scan_one(symbol: str) -> tuple[str, Any, StockAnalysis]:
             ticker = self._tickers.get(symbol)
             if ticker is None:
                 ticker = yf.Ticker(symbol)
+            try:
+                analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
+            except Exception as exc:
+                analysis = StockAnalysis(
+                    ticker=symbol,
+                    company_name=symbol,
+                    notes=[f"analysis error: {exc}"],
+                )
+            return symbol, ticker, analysis
+
+        next_analyses: dict[str, StockAnalysis] = {}
+        max_workers = min(8, max(1, len(symbols)))
+
+        with ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for symbol, ticker, analysis in pool.map(_scan_one, symbols):
                 self._tickers[symbol] = ticker
-            analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
-            self._analyses[symbol] = analysis
+                next_analyses[symbol] = analysis
+
+        self._analyses = next_analyses
         return rank_analyses(self.analyses)
 
     def refresh_prices(self) -> list[StockAnalysis]:
-        for symbol, analysis in self._analyses.items():
+        for symbol in self.universe:
+            analysis = self._analyses.get(symbol)
+            if analysis is None:
+                continue
             ticker = self._tickers.get(symbol)
             if ticker is None:
                 continue
