@@ -6,6 +6,23 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-02-21
+
+### Added
+- Alternative market-data provider support via `defeatbeta-api` with adapter coverage tests.
+- Provider selection through `GRAHAM_MARKET_DATA_PROVIDER` while keeping transparent fallback behavior.
+- Additional regression tests for provider fallback paths in fundamentals scans and index constituent loading.
+
+### Changed
+- Fundamentals scans now process symbols in batches of 30 for more stable large-universe execution.
+- Fundamentals analysis results are cached in-memory for 15 minutes to reduce repeated provider calls.
+- Index loading reliability improved for `sp500` and `nasdaq100` with dedicated public constituent source handling.
+
+### Fixed
+- Restored `yfinance` as the default provider to avoid sparse-data regressions when optional providers are incomplete.
+- Added robust fallback from sparse `defeatbeta` payloads to `yfinance` for both screening metrics and index constituents.
+- Corrected `defeatbeta-api` dependency constraint to a published version range for successful `pipx` installs.
+
 ## [0.3.3] - 2026-02-21
 
 ### Changed
