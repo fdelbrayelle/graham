@@ -99,8 +99,11 @@ class GrahamApp(App[None]):
         super().__init__()
         self.settings: UserSettings = load_user_settings()
         self.engine = GrahamEngine(y=4.4, require_dividend=True)
-        self.i18n = DisplayTranslator(language="en")
-        self.language = "en"
+        startup_language = self.settings.default_language.strip().lower() if self.settings.default_language else "en"
+        if not startup_language:
+            startup_language = "en"
+        self.i18n = DisplayTranslator(language=startup_language)
+        self.language = startup_language
         self.model = "none"
         self.refresh_seconds = 15
         self.scan_top: int | None = None
@@ -155,6 +158,11 @@ class GrahamApp(App[None]):
             return False, message
 
         self.language = self.i18n.language
+        self.settings.default_language = self.language
+        try:
+            save_user_settings(self.settings)
+        except Exception as exc:
+            return False, f"Language updated but could not persist settings: {exc}"
         prompt = self.query_one("#prompt", Input)
         prompt.placeholder = self.tr("Type /help")
         self._setup_table_columns()

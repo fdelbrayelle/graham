@@ -98,6 +98,7 @@ Robustness policy:
 
 - `/help`
 - `/universes`
+- `/languages`
 - `/lang [language-code]`
 - `/model [none|model-name]`
 - `/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]`
@@ -145,6 +146,12 @@ Example:
 # 🌍 Display Language
 
 - Default display language is English (`en`).
+- List supported language codes:
+
+```text
+/languages
+```
+
 - Change language at runtime with:
 
 ```text
@@ -153,6 +160,7 @@ Example:
 
 - Translation uses `deep-translator` (Google Translate backend), not LLMs.
 - If translation fails for any reason, the app keeps English text (safe fallback).
+- Your chosen language is persisted in `~/.graham/config.json`.
 
 # 🎯 Score Rating
 

@@ -26,6 +26,7 @@ class CommandProcessor:
     COMMANDS = [
         "/help",
         "/universes",
+        "/languages",
         "/lang",
         "/model",
         "/universe",
@@ -126,6 +127,9 @@ class CommandProcessor:
 
         if command == "/universes":
             return self.list_universes_text()
+
+        if command == "/languages":
+            return self.list_languages_text()
 
         if command == "/lang":
             if not args:
@@ -245,6 +249,7 @@ class CommandProcessor:
             "Available commands:\n"
             "/help\n"
             "/universes\n"
+            "/languages\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
             "/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]\n"
@@ -276,6 +281,16 @@ class CommandProcessor:
         lines.append("")
         lines.append(self._t("Use /universe <name> to load now."))
         lines.append(self._t("Use /default-universe <name> to persist your default."))
+        return "\n".join(lines)
+
+    def list_languages_text(self) -> str:
+        current = str(getattr(self.app, "language", "en")).strip().lower() or "en"
+        lines = [self._t("Available display languages:")]
+        for code in self.LANGUAGE_CODES:
+            marker = "★" if code == current else " "
+            lines.append(f"{marker} {code}")
+        lines.append("")
+        lines.append(self._t("Use /lang <code> to change and persist your display language."))
         return "\n".join(lines)
 
     def parse_scan_options(self, args: list[str]) -> dict[str, float | int | None] | str:

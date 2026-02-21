@@ -10,6 +10,7 @@ class UserSettings:
     score_green_min: float = 0.80
     score_orange_min: float = 0.60
     default_universe: str = "sample"
+    default_language: str = "en"
 
 
 def settings_path() -> Path:
@@ -35,6 +36,10 @@ def load_user_settings() -> UserSettings:
     default_universe = payload.get("default_universe")
     if isinstance(default_universe, str) and default_universe.strip():
         settings.default_universe = default_universe.strip()
+
+    default_language = payload.get("default_language")
+    if isinstance(default_language, str) and default_language.strip():
+        settings.default_language = default_language.strip().lower()
     return settings
 
 
