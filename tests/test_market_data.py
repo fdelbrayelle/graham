@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 from types import ModuleType
 import sys
 
@@ -42,6 +43,14 @@ def test_create_ticker_defeatbeta_falls_back_to_yfinance(monkeypatch) -> None:
     monkeypatch.delitem(sys.modules, "defeatbeta_api", raising=False)
     monkeypatch.delitem(sys.modules, "defeatbeta_api.data", raising=False)
     monkeypatch.delitem(sys.modules, "defeatbeta_api.data.ticker", raising=False)
+    real_import_module = importlib.import_module
+
+    def fake_import_module(name: str, package: str | None = None):
+        if name.startswith("defeatbeta_api"):
+            raise ImportError("simulated missing defeatbeta_api")
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", fake_import_module)
 
     class FakeYF:
         @staticmethod

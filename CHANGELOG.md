@@ -6,6 +6,11 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-02-21
+
+### Fixed
+- Stabilized the market-data fallback test by simulating a missing `defeatbeta_api` import, preventing CI-dependent behavior when the package is present.
+
 ## [0.3.4] - 2026-02-21
 
 ### Added
