@@ -2,7 +2,7 @@
 
 ## One-time setup
 
-1. Create the project on PyPI (`graham`) if not already created.
+1. Create the project on PyPI (`graham-agent`) if not already created.
 2. In PyPI project settings, configure a Trusted Publisher for this repo and workflow:
    - Owner: `fdelbrayelle`
    - Repository: `graham`
