@@ -97,6 +97,7 @@ Robustness policy:
 # 🧭 Slash Commands
 
 - `/help`
+- `/lang [language-code]`
 - `/model [none|model-name]`
 - `/universe [sample|sp500|cac40|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
@@ -108,6 +109,7 @@ Robustness policy:
 
 Context-aware autocompletion in the input overlay:
 - `/` -> command list
+- `/lang` -> common language codes (`en`, `fr`, `es`, `de`, ...)
 - `/model` -> `none` + model examples
 - `/universe` -> available universes + `custom:path`
 - `/export` -> `csv/json`
@@ -135,6 +137,18 @@ Example:
 ```text
 /model gpt-4.1-mini
 ```
+
+# 🌍 Display Language
+
+- Default display language is English (`en`).
+- Change language at runtime with:
+
+```text
+/lang fr
+```
+
+- Translation uses `deep-translator` (Google Translate backend), not LLMs.
+- If translation fails for any reason, the app keeps English text (safe fallback).
 
 # 🗂️ Project Structure
 

@@ -3,14 +3,17 @@ from __future__ import annotations
 import shlex
 from pathlib import Path
 
+from graham_agent.i18n import COMMON_LANGUAGE_CODES
+
 DEFAULT_SAMPLE = ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"]
 
 
 class CommandProcessor:
-    COMMANDS = ["/help", "/model", "/universe", "/scan", "/screen", "/explain", "/export"]
+    COMMANDS = ["/help", "/lang", "/model", "/universe", "/scan", "/screen", "/explain", "/export"]
     MODELS = ["none", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"]
     SCAN_OPTIONS = ["--top", "--min-score", "--refresh"]
     EXPORT_FORMATS = ["csv", "json"]
+    LANGUAGE_CODES = COMMON_LANGUAGE_CODES
 
     def __init__(self, app: object) -> None:
         self.app = app
@@ -37,6 +40,9 @@ class CommandProcessor:
 
         if cmd == "/model":
             return [name for name in self.MODELS if name.startswith(current)]
+
+        if cmd == "/lang":
+            return [code for code in self.LANGUAGE_CODES if code.startswith(current.lower())]
 
         if cmd == "/universe":
             base = ["sample", "sp500", "cac40", "custom:./universes/sample.txt"]
@@ -66,7 +72,7 @@ class CommandProcessor:
         try:
             parts = shlex.split(line)
         except ValueError as exc:
-            return f"Invalid command: {exc}"
+            return self._t(f"Invalid command: {exc}")
 
         if not parts:
             return ""
@@ -77,20 +83,28 @@ class CommandProcessor:
         if command == "/help":
             return self.help_text()
 
+        if command == "/lang":
+            if not args:
+                return self._t(
+                    f"Current display language: {self.app.language}. Usage: /lang [language-code]"
+                )
+            success, message = self.app.set_language(args[0])
+            return self._t(message) if not success else message
+
         if command == "/model":
             if not args:
-                return f"Current model: {self.app.model}. Usage: /model [none|model-name]"
+                return self._t(f"Current model: {self.app.model}. Usage: /model [none|model-name]")
             self.app.model = args[0]
-            return f"Active model: {self.app.model}"
+            return self._t(f"Active model: {self.app.model}")
 
         if command == "/universe":
             if not args:
-                return "Usage: /universe [sample|sp500|cac40|custom:path]"
+                return self._t("Usage: /universe [sample|sp500|cac40|custom:path]")
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
-                return f"Empty universe. {note}"
+                return self._t(f"Empty universe. {note}")
             self.app.set_universe(tickers, note)
-            return f"Universe loaded: {len(tickers)} tickers ({note})"
+            return self._t(f"Universe loaded: {len(tickers)} tickers ({note})")
 
         if command == "/scan":
             options = self.parse_scan_options(args)
@@ -102,37 +116,38 @@ class CommandProcessor:
                 refresh=options["refresh"],
             )
             return (
-                "Scan completed. "
+                self._t("Scan completed. ")
+                + " "
                 f"top={options['top'] or 'all'}, min_score={options['min_score']:.2f}, "
                 f"refresh={self.app.refresh_seconds}s"
             )
 
         if command == "/screen":
             if not args:
-                return "Usage: /screen TICKERS_CSV"
+                return self._t("Usage: /screen TICKERS_CSV")
             tickers = [item.strip().upper() for item in args[0].split(",") if item.strip()]
             if not tickers:
-                return "No valid ticker provided."
+                return self._t("No valid ticker provided.")
             self.app.set_universe(tickers, "custom csv")
             await self.app.run_scan(top=None, min_score=0.0, refresh=self.app.refresh_seconds)
-            return f"Screen completed on {len(tickers)} tickers."
+            return self._t(f"Screen completed on {len(tickers)} tickers.")
 
         if command == "/explain":
             ticker, question = self._extract_explain_args(args)
             if not ticker:
-                return "Select a ticker or use /explain TICKER [question]."
+                return self._t("Select a ticker or use /explain TICKER [question].")
             return await self.app.explain_ticker(ticker, question)
 
         if command == "/export":
             if not args:
-                return "Usage: /export [csv|json]"
+                return self._t("Usage: /export [csv|json]")
             export_format = args[0].lower()
             if export_format not in self.EXPORT_FORMATS:
-                return "Unsupported format. Use /export [csv|json]."
+                return self._t("Unsupported format. Use /export [csv|json].")
             output = self.app.export_results(export_format)
-            return f"Export created: {output}"
+            return self._t(f"Export created: {output}")
 
-        return f"Unknown command: {command}. Type /help"
+        return self._t(f"Unknown command: {command}. Type /help")
 
     def help_text(self) -> str:
         if self.app.model == "none":
@@ -147,9 +162,10 @@ class CommandProcessor:
                 "If the LLM call fails, the app falls back to a deterministic local explanation."
             )
 
-        return (
+        return self._t(
             "Available commands:\n"
             "/help\n"
+            "/lang [language-code]\n"
             "/model [none|model-name]\n"
             "/universe [sample|sp500|cac40|custom:path]\n"
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
@@ -170,37 +186,37 @@ class CommandProcessor:
 
             if token == "--top":
                 if index + 1 >= len(args):
-                    return "Option --top expects a numeric value."
+                    return self._t("Option --top expects a numeric value.")
                 try:
                     top = int(args[index + 1])
                 except ValueError:
-                    return "Invalid --top value."
+                    return self._t("Invalid --top value.")
                 index += 2
                 continue
 
             if token == "--min-score":
                 if index + 1 >= len(args):
-                    return "Option --min-score expects a numeric value."
+                    return self._t("Option --min-score expects a numeric value.")
                 try:
                     min_score = float(args[index + 1])
                 except ValueError:
-                    return "Invalid --min-score value."
+                    return self._t("Invalid --min-score value.")
                 min_score = max(0.0, min(1.0, min_score))
                 index += 2
                 continue
 
             if token == "--refresh":
                 if index + 1 >= len(args):
-                    return "Option --refresh expects a numeric value."
+                    return self._t("Option --refresh expects a numeric value.")
                 try:
                     refresh = int(args[index + 1])
                 except ValueError:
-                    return "Invalid --refresh value."
+                    return self._t("Invalid --refresh value.")
                 refresh = max(3, refresh)
                 index += 2
                 continue
 
-            return f"Unknown option: {token}"
+            return self._t(f"Unknown option: {token}")
 
         return {"top": top, "min_score": min_score, "refresh": refresh}
 
@@ -217,7 +233,7 @@ class CommandProcessor:
         if spec == "sample":
             return DEFAULT_SAMPLE, "sample (builtin)"
 
-        return [], f"File universes/{spec}.txt not found"
+        return [], self._t(f"File universes/{spec}.txt not found")
 
     def _read_universe_file(self, path: Path) -> list[str]:
         try:
@@ -247,6 +263,12 @@ class CommandProcessor:
             return self.app.selected_ticker, " ".join(args)
 
         return maybe_ticker, " ".join(args[1:])
+
+    def _t(self, text: str) -> str:
+        translator = getattr(self.app, "tr", None)
+        if callable(translator):
+            return str(translator(text))
+        return text
 
 
 def discover_universe_names() -> list[str]:

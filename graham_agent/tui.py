@@ -14,6 +14,7 @@ from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
 
 from graham_agent.commands import CommandProcessor, discover_universe_names
 from graham_agent.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
+from graham_agent.i18n import DisplayTranslator
 from graham_agent.llm import LLMError, ask_model, fallback_explanation
 
 
@@ -69,6 +70,8 @@ class GrahamApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self.engine = GrahamEngine(y=4.4, require_dividend=True)
+        self.i18n = DisplayTranslator(language="en")
+        self.language = "en"
         self.model = "none"
         self.refresh_seconds = 15
         self.scan_top: int | None = None
@@ -86,17 +89,15 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield Static("No row selected.", id="details")
+            yield Static(self.tr("No row selected."), id="details")
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
-            yield Input(placeholder="Type /help", id="prompt")
+            yield Input(placeholder=self.tr("Type /help"), id="prompt")
             yield Static("", id="suggestions")
         yield Footer()
 
     async def on_mount(self) -> None:
-        table = self.query_one("#ranking", DataTable)
-        table.cursor_type = "row"
-        table.add_columns("rank", "ticker", "score", "price", "V", "MoS", "P/E", "P/B", "dividend")
+        self._setup_table_columns()
 
         tickers, note = self.processor.resolve_universe("sample")
         self.set_universe(tickers, note)
@@ -105,9 +106,24 @@ class GrahamApp(App[None]):
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
         self.write_log("Welcome to graham. Type /help")
 
-    def write_log(self, message: str) -> None:
+    def tr(self, text: str) -> str:
+        return self.i18n.tr(text)
+
+    def set_language(self, language: str) -> tuple[bool, str]:
+        success, message = self.i18n.set_language(language)
+        if not success:
+            return False, message
+
+        self.language = self.i18n.language
+        prompt = self.query_one("#prompt", Input)
+        prompt.placeholder = self.tr("Type /help")
+        self._setup_table_columns()
+        self.refresh_table()
+        return True, self.tr(message)
+
+    def write_log(self, message: str, translate: bool = True) -> None:
         logger = self.query_one("#log", RichLog)
-        logger.write(message)
+        logger.write(self.tr(message) if translate else message)
 
     def available_universes(self) -> list[str]:
         return discover_universe_names()
@@ -165,8 +181,8 @@ class GrahamApp(App[None]):
             )
             try:
                 response = await asyncio.to_thread(ask_model, self.model, system_prompt, user_prompt)
-                self.write_log(f"[LLM {self.model}]\n{response}")
-                return "LLM explanation written to log."
+                self.write_log(f"[LLM {self.model}]\n{response}", translate=False)
+                return self.tr("LLM explanation written to log.")
             except LLMError as exc:
                 fallback = fallback_explanation(
                     ticker=analysis.ticker,
@@ -177,7 +193,7 @@ class GrahamApp(App[None]):
                 )
                 self.write_log(f"LLM error: {exc}")
                 self.write_log(fallback)
-                return "LLM error, deterministic fallback written to log."
+                return self.tr("LLM error, deterministic fallback written to log.")
 
         fallback = fallback_explanation(
             ticker=analysis.ticker,
@@ -187,7 +203,7 @@ class GrahamApp(App[None]):
             criteria_lines=criteria_lines,
         )
         self.write_log(fallback)
-        return "Explanation written to log."
+        return self.tr("Explanation written to log.")
 
     def export_results(self, export_format: str) -> str:
         export_dir = Path("exports")
@@ -265,12 +281,12 @@ class GrahamApp(App[None]):
             except Exception as exc:
                 response = f"Command error: {exc}"
             if response:
-                self.write_log(response)
+                self.write_log(response, translate=False)
             return
 
         if self.selected_ticker:
             response = await self.explain_ticker(self.selected_ticker, line)
-            self.write_log(response)
+            self.write_log(response, translate=False)
             return
 
         self.write_log("No ticker selected. Type /help")
@@ -368,22 +384,22 @@ class GrahamApp(App[None]):
         details = self.query_one("#details", Static)
 
         lines = [
-            f"Ticker: {analysis.ticker}",
-            f"Score: {analysis.score:.2f}",
-            f"Price: {format_metric(analysis.price)}",
+            f"{self.tr('Ticker')}: {analysis.ticker}",
+            f"{self.tr('Score')}: {analysis.score:.2f}",
+            f"{self.tr('Price')}: {format_metric(analysis.price)}",
             f"V: {format_metric(analysis.intrinsic_value)}",
             f"MoS: {format_metric(analysis.mos, percentage=True)}",
             "",
-            "Criteria:",
+            self.tr("Criteria:"),
         ]
         for criterion in analysis.criteria:
-            lines.append(f"{criterion.index}. {criterion.label}: {criterion.status}")
-            lines.append(f"   note: {criterion.note}")
+            lines.append(f"{criterion.index}. {self.tr(criterion.label)}: {criterion.status}")
+            lines.append(f"   {self.tr('Note')}: {self.tr(criterion.note)}")
 
         if analysis.notes:
             lines.append("")
-            lines.append("Notes:")
-            lines.extend(f"- {note}" for note in analysis.notes)
+            lines.append(self.tr("Notes:"))
+            lines.extend(f"- {self.tr(note)}" for note in analysis.notes)
 
         details.update("\n".join(lines))
 
@@ -410,6 +426,22 @@ class GrahamApp(App[None]):
             except Exception:
                 pass
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
+
+    def _setup_table_columns(self) -> None:
+        table = self.query_one("#ranking", DataTable)
+        table.cursor_type = "row"
+        table.clear(columns=True)
+        table.add_columns(
+            self.tr("rank"),
+            self.tr("ticker"),
+            self.tr("score"),
+            self.tr("price"),
+            "V",
+            "MoS",
+            "P/E",
+            "P/B",
+            self.tr("dividend"),
+        )
 
 
 def run_tui() -> None:
