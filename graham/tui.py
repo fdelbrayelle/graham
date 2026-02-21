@@ -3,6 +3,10 @@ from __future__ import annotations
 import asyncio
 import csv
 import json
+import os
+import shutil
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -476,27 +480,28 @@ class GrahamApp(App[None]):
         if success:
             self.write_log(message, translate=False)
 
-    @on(Click, "#log")
-    def on_log_clicked(self, event: Click) -> None:
+    @on(Click)
+    def on_click(self, event: Click) -> None:
         logger = self.query_one("#log", RichLog)
-        content_offset = event.get_content_offset(logger)
-        if content_offset is None:
-            return
-
-        scroll_y = int(getattr(logger, "scroll_y", 0))
-        start_line = int(getattr(logger, "_start_line", 0))
-        absolute_line = start_line + max(0, int(content_offset.y) + scroll_y)
-        block = self._find_log_block(absolute_line)
-        if not block:
-            return
-        self._copy_block_to_clipboard(block, "Output block copied to clipboard.")
-
-    @on(Click, "#details")
-    def on_details_clicked(self, event: Click) -> None:
         details = self.query_one("#details", Static)
-        if event.get_content_offset(details) is None:
+
+        log_offset = event.get_content_offset(logger)
+        if log_offset is not None:
+            scroll_y = int(getattr(logger, "scroll_y", 0))
+            start_line = int(getattr(logger, "_start_line", 0))
+            absolute_line = start_line + max(0, int(log_offset.y) + scroll_y)
+            block = self._find_log_block(absolute_line)
+            if not block:
+                self.notify("No output block found to copy.", severity="warning")
+                return
+            self._copy_block_to_clipboard(block, "Output block copied to clipboard.")
+            return
+
+        details_offset = event.get_content_offset(details)
+        if details_offset is None:
             return
         if not self._details_text.strip():
+            self.notify("No details block found to copy.", severity="warning")
             return
         self._copy_block_to_clipboard(self._details_text, "Details block copied to clipboard.")
 
@@ -795,12 +800,86 @@ class GrahamApp(App[None]):
         return None
 
     def _copy_block_to_clipboard(self, content: str, success_message: str) -> None:
+        system_copied = self._copy_to_system_clipboard(content)
+        tkinter_copied = False
+        if not system_copied:
+            tkinter_copied = self._copy_to_tkinter_clipboard(content)
+        if system_copied or tkinter_copied:
+            self.notify(success_message, severity="information")
+            return
+
         try:
             self.copy_to_clipboard(content)
-        except Exception as exc:
-            self.notify(f"Clipboard copy failed: {exc}", severity="error")
+        except Exception:
+            self.notify("Clipboard copy failed.", severity="error")
             return
-        self.notify(success_message, severity="information")
+
+        if self._driver is None:
+            self.notify(
+                "Clipboard backend unavailable. Install wl-copy/xclip/xsel for reliable paste.",
+                severity="error",
+            )
+            return
+        self.notify(
+            "Copy requested via terminal. If Ctrl+V fails, install wl-copy/xclip/xsel.",
+            severity="warning",
+        )
+
+    def _copy_to_system_clipboard(self, content: str) -> bool:
+        commands: list[list[str]] = []
+        if os.name == "nt":
+            commands.extend([["clip"], ["clip.exe"]])
+        elif sys.platform == "darwin":
+            commands.append(["pbcopy"])
+        else:
+            if os.getenv("WAYLAND_DISPLAY"):
+                commands.append(["wl-copy"])
+            commands.extend(
+                [
+                    ["xclip", "-selection", "clipboard"],
+                    ["xsel", "--clipboard", "--input"],
+                    ["wl-copy"],
+                    ["pbcopy"],
+                    ["clip.exe"],
+                ]
+            )
+
+        checked: set[tuple[str, ...]] = set()
+        for command in commands:
+            key = tuple(command)
+            if key in checked:
+                continue
+            checked.add(key)
+            if shutil.which(command[0]) is None:
+                continue
+            try:
+                subprocess.run(
+                    command,
+                    input=content,
+                    text=True,
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                return True
+            except Exception:
+                continue
+        return False
+
+    def _copy_to_tkinter_clipboard(self, content: str) -> bool:
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.withdraw()
+            root.clipboard_clear()
+            root.clipboard_append(content)
+            root.update_idletasks()
+            root.update()
+            root.destroy()
+            return True
+        except Exception:
+            return False
 
     def refresh_table(self) -> None:
         table = self.query_one("#ranking", DataTable)

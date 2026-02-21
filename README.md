@@ -170,6 +170,7 @@ Keyboard:
 Mouse:
 - click a block in the output log to copy it
 - click the details/criteria panel to copy the full details block
+- on Linux, install `wl-copy` (Wayland) or `xclip`/`xsel` for reliable `Ctrl+V` paste
 
 # 🤖 Optional LLM
 
