@@ -385,6 +385,7 @@ class GrahamApp(App[None]):
         if not symbol:
             return self.tr("Usage: /moat TICKER")
 
+        self.write_log(f"Generating moat analysis for {symbol} with model {self.model}...", translate=False)
         prompt = build_moat_prompt(symbol)
         try:
             response = await asyncio.to_thread(ask_model, self.model, "", prompt, 60)
