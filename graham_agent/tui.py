@@ -9,7 +9,7 @@ from pathlib import Path
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.events import Key
+from textual.events import Key, Resize
 from textual.widgets import DataTable, Header, Input, RichLog, Static
 
 from graham_agent.commands import CommandProcessor, discover_universe_names
@@ -77,27 +77,25 @@ class GrahamApp(App[None]):
         display: block;
     }
 
-    @media (max-width: 120) {
-        #center {
-            layout: vertical;
-            max-height: 16;
-        }
+    #center.narrow {
+        layout: vertical;
+        max-height: 16;
+    }
 
-        #ranking {
-            width: 1fr;
-            height: auto;
-        }
+    #ranking.narrow {
+        width: 1fr;
+        height: auto;
+    }
 
-        #details {
-            width: 1fr;
-            min-width: 0;
-            max-height: 8;
-        }
+    #details.narrow {
+        width: 1fr;
+        min-width: 0;
+        max-height: 8;
+    }
 
-        #log {
-            min-height: 3;
-            max-height: 8;
-        }
+    #log.narrow {
+        min-height: 3;
+        max-height: 8;
     }
     """
 
@@ -137,6 +135,7 @@ class GrahamApp(App[None]):
 
     async def on_mount(self) -> None:
         self._setup_table_columns()
+        self._apply_responsive_layout()
 
         default_spec = self.settings.default_universe or "sample"
         tickers, note = self.processor.resolve_universe(default_spec)
@@ -154,6 +153,9 @@ class GrahamApp(App[None]):
         self.write_log(f"Default universe: {default_spec}")
         self.write_log("Initial scan started in background...")
         asyncio.create_task(self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds))
+
+    def on_resize(self, event: Resize) -> None:
+        self._apply_responsive_layout()
 
     def tr(self, text: str) -> str:
         return self.i18n.tr(text)
@@ -549,6 +551,22 @@ class GrahamApp(App[None]):
         if score >= self.score_orange_min:
             return "🟠"
         return "🔴"
+
+    def _apply_responsive_layout(self) -> None:
+        narrow = self.size.width < 120
+        try:
+            center = self.query_one("#center", Horizontal)
+            ranking = self.query_one("#ranking", DataTable)
+            details = self.query_one("#details", Static)
+            log = self.query_one("#log", RichLog)
+        except Exception:
+            return
+
+        for widget in (center, ranking, details, log):
+            if narrow:
+                widget.add_class("narrow")
+            else:
+                widget.remove_class("narrow")
 
 
 def run_tui() -> None:
