@@ -129,10 +129,10 @@ class GrahamApp(App[None]):
 
         tickers, note = self.processor.resolve_universe("sample")
         self.set_universe(tickers, note)
-        await self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds)
-
         self._timer = self.set_interval(self.refresh_seconds, self._schedule_price_refresh)
         self.write_log("Welcome to graham. Type /help")
+        self.write_log("Initial scan started in background...")
+        asyncio.create_task(self.run_scan(top=None, min_score=0.0, refresh=self.refresh_seconds))
 
     def tr(self, text: str) -> str:
         return self.i18n.tr(text)
