@@ -10,7 +10,7 @@ from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.events import Key
-from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
+from textual.widgets import DataTable, Header, Input, RichLog, Static
 
 from graham_agent.commands import CommandProcessor, discover_universe_names
 from graham_agent.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
@@ -26,12 +26,12 @@ class GrahamApp(App[None]):
     }
 
     #center {
-        height: 2fr;
-        min-height: 12;
+        height: 3fr;
+        min-height: 8;
     }
 
     #ranking {
-        width: 3fr;
+        width: 5fr;
         height: 1fr;
         border: round #4c956c;
         overflow: auto;
@@ -39,7 +39,7 @@ class GrahamApp(App[None]):
 
     #details {
         width: 2fr;
-        min-width: 36;
+        min-width: 30;
         height: 1fr;
         border: round #bc4749;
         padding: 1 1;
@@ -47,15 +47,14 @@ class GrahamApp(App[None]):
     }
 
     #log {
-        height: 1fr;
-        min-height: 8;
-        max-height: 20;
+        height: 2fr;
+        min-height: 4;
         border: round #386641;
     }
 
     #input-wrap {
         height: auto;
-        padding: 0 0 1 0;
+        padding: 0;
     }
 
     #prompt {
@@ -85,12 +84,12 @@ class GrahamApp(App[None]):
         #details {
             width: 1fr;
             min-width: 0;
-            max-height: 12;
+            max-height: 10;
         }
 
         #log {
-            min-height: 6;
-            max-height: 12;
+            min-height: 4;
+            max-height: 9;
         }
     }
     """
@@ -122,7 +121,6 @@ class GrahamApp(App[None]):
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
             yield Static("", id="suggestions")
-        yield Footer()
 
     async def on_mount(self) -> None:
         self._setup_table_columns()
