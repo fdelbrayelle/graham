@@ -7,7 +7,7 @@ import shlex
 from pathlib import Path
 from typing import Any
 
-from graham_agent.i18n import COMMON_LANGUAGE_CODES
+from graham.i18n import COMMON_LANGUAGE_CODES
 
 UNIVERSE_PRESETS: dict[str, list[str]] = {
     "sample": ["AAPL", "MSFT", "JNJ", "PG", "KO", "XOM", "PEP", "MMM"],

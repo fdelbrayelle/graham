@@ -1,4 +1,4 @@
-from graham_agent.graham import (
+from graham.graham import (
     CriterionResult,
     PASS,
     NA,

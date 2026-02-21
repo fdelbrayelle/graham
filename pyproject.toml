@@ -3,7 +3,7 @@ requires = ["setuptools>=69", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "graham-agent"
+name = "graham"
 version = "0.1.0"
 description = "Fullscreen TUI stock screener inspired by Benjamin Graham"
 readme = "README.md"
@@ -26,11 +26,11 @@ dev = [
 ]
 
 [project.scripts]
-graham = "graham_agent.main:run"
+graham = "graham.main:run"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["graham_agent*"]
+include = ["graham*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

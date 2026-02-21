@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import typer
 
-from graham_agent.tui import run_tui
+from graham.tui import run_tui
 
 cli = typer.Typer(
     add_completion=False,

@@ -263,7 +263,7 @@ Load a supported index and fetch constituents via yfinance:
 # 🗂️ Project Structure
 
 ```text
-graham_agent/
+graham/
   main.py
   tui.py
   graham.py

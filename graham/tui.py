@@ -13,11 +13,11 @@ from textual.containers import Horizontal, Vertical
 from textual.events import Key, Resize
 from textual.widgets import DataTable, Header, Input, RichLog, Static
 
-from graham_agent.commands import CommandProcessor, discover_universe_names
-from graham_agent.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
-from graham_agent.i18n import DisplayTranslator
-from graham_agent.llm import LLMError, ask_model, fallback_explanation
-from graham_agent.settings import UserSettings, load_user_settings, save_user_settings
+from graham.commands import CommandProcessor, discover_universe_names
+from graham.graham import GrahamEngine, StockAnalysis, filter_ranked, format_metric
+from graham.i18n import DisplayTranslator
+from graham.llm import LLMError, ask_model, fallback_explanation
+from graham.settings import UserSettings, load_user_settings, save_user_settings
 
 
 class GrahamApp(App[None]):
