@@ -117,3 +117,42 @@ def test_engine_applies_company_override_when_analysis_name_is_symbol(monkeypatc
 
     ranked = engine.scan_fundamentals()
     assert ranked[0].company_name == "Air Liquide"
+
+
+def test_scan_fundamentals_caches_yfinance_calls_for_15_minutes(monkeypatch) -> None:
+    import graham.graham as graham_module
+
+    engine = GrahamEngine()
+    engine.set_universe(["AAPL"])
+    assert engine._fundamentals_cache_ttl_seconds == 900
+
+    calls = {"ticker": 0, "analyze": 0}
+    current_time = {"value": 1_000_000.0}
+
+    class DummyTicker:
+        pass
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> DummyTicker:
+            calls["ticker"] += 1
+            return DummyTicker()
+
+    def fake_analyze(symbol: str, ticker: object, y: float, require_dividend: bool) -> StockAnalysis:
+        calls["analyze"] += 1
+        return StockAnalysis(ticker=symbol, company_name=symbol, score=0.5)
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_cache", lambda yf_module: None)
+    monkeypatch.setattr(graham_module, "_configure_yfinance_logging", lambda: None)
+    monkeypatch.setattr(graham_module, "analyze_symbol", fake_analyze)
+    monkeypatch.setattr(graham_module.time, "time", lambda: current_time["value"])
+
+    engine.scan_fundamentals()
+    engine.scan_fundamentals()
+    assert calls["ticker"] == 1
+    assert calls["analyze"] == 1
+
+    current_time["value"] += 901
+    engine.scan_fundamentals()
+    assert calls["analyze"] == 2

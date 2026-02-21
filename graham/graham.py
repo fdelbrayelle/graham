@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import logging
 import os
 from pathlib import Path
+import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -16,6 +17,19 @@ FAIL = "FAIL"
 NA = "N/A"
 _YFINANCE_CACHE_CONFIGURED = False
 _YFINANCE_LOGGING_CONFIGURED = False
+
+
+def _resolve_scan_workers(symbol_count: int) -> int:
+    default_workers = min(8, max(1, symbol_count))
+    configured = os.getenv("GRAHAM_SCAN_WORKERS", "").strip()
+    if not configured:
+        return default_workers
+    try:
+        value = int(configured)
+    except ValueError:
+        return default_workers
+    bounded = max(1, value)
+    return min(bounded, max(1, symbol_count))
 
 
 def _ensure_writable_dir(path: Path) -> bool:
@@ -235,28 +249,40 @@ def _extract_price_time(info: dict[str, Any], ticker: Any) -> str | None:
     return None
 
 
-def _extract_balance_value(ticker: Any, labels: tuple[str, ...]) -> float | None:
+def _extract_balance_values(ticker: Any, label_sets: list[tuple[str, ...]]) -> list[float | None]:
+    if not label_sets:
+        return []
+    missing: list[float | None] = [None for _ in label_sets]
     try:
         balance_sheet = getattr(ticker, "balance_sheet", None)
         if balance_sheet is None or getattr(balance_sheet, "empty", True):
-            return None
-        for label in labels:
-            if label not in balance_sheet.index:
-                continue
-            series = balance_sheet.loc[label]
-            values: list[tuple[float, float]] = []
-            for column, item in series.items():
-                number = safe_float(item)
-                if number is None:
+            return missing
+        for set_index, labels in enumerate(label_sets):
+            for label in labels:
+                if label not in balance_sheet.index:
                     continue
-                values.append((_sort_key(column), number))
-            if not values:
-                continue
-            values.sort(key=lambda pair: pair[0])
-            return values[-1][1]
+                series = balance_sheet.loc[label]
+                values: list[tuple[float, float]] = []
+                for column, item in series.items():
+                    number = safe_float(item)
+                    if number is None:
+                        continue
+                    values.append((_sort_key(column), number))
+                if not values:
+                    continue
+                values.sort(key=lambda pair: pair[0])
+                missing[set_index] = values[-1][1]
+                break
+        return missing
     except Exception:
+        return missing
+
+
+def _extract_balance_value(ticker: Any, labels: tuple[str, ...]) -> float | None:
+    values = _extract_balance_values(ticker, [labels])
+    if not values:
         return None
-    return None
+    return values[0]
 
 
 def _build_criteria(
@@ -459,33 +485,33 @@ def analyze_symbol(
     current_assets = safe_float(info.get("totalCurrentAssets"))
     current_liabilities = safe_float(info.get("totalCurrentLiabilities"))
 
-    if total_debt is None:
-        total_debt = _extract_balance_value(
+    if total_debt is None or current_assets is None or current_liabilities is None:
+        extracted = _extract_balance_values(
             ticker,
-            (
-                "Total Debt",
-                "Net Debt",
-                "TotalDebt",
-            ),
+            [
+                (
+                    "Total Debt",
+                    "Net Debt",
+                    "TotalDebt",
+                ),
+                (
+                    "Current Assets",
+                    "Total Current Assets",
+                    "CurrentAssets",
+                ),
+                (
+                    "Current Liabilities",
+                    "Total Current Liabilities",
+                    "CurrentLiabilities",
+                ),
+            ],
         )
-    if current_assets is None:
-        current_assets = _extract_balance_value(
-            ticker,
-            (
-                "Current Assets",
-                "Total Current Assets",
-                "CurrentAssets",
-            ),
-        )
-    if current_liabilities is None:
-        current_liabilities = _extract_balance_value(
-            ticker,
-            (
-                "Current Liabilities",
-                "Total Current Liabilities",
-                "CurrentLiabilities",
-            ),
-        )
+        if total_debt is None:
+            total_debt = extracted[0]
+        if current_assets is None:
+            current_assets = extracted[1]
+        if current_liabilities is None:
+            current_liabilities = extracted[2]
 
     trailing_eps = safe_float(info.get("trailingEps")) or safe_float(info.get("epsTrailingTwelveMonths"))
     if trailing_eps is None and eps_series:
@@ -574,6 +600,8 @@ class GrahamEngine:
         self._tickers: dict[str, Any] = {}
         self._analyses: dict[str, StockAnalysis] = {}
         self._company_name_overrides: dict[str, str] = {}
+        self._fundamentals_cache_ttl_seconds = 900
+        self._fundamentals_cache: dict[str, tuple[float, StockAnalysis]] = {}
 
     @property
     def analyses(self) -> list[StockAnalysis]:
@@ -593,6 +621,9 @@ class GrahamEngine:
         self._analyses = {symbol: self._analyses[symbol] for symbol in cleaned if symbol in self._analyses}
         self._company_name_overrides = {
             symbol: name for symbol, name in self._company_name_overrides.items() if symbol in cleaned
+        }
+        self._fundamentals_cache = {
+            symbol: self._fundamentals_cache[symbol] for symbol in cleaned if symbol in self._fundamentals_cache
         }
         return self.universe
 
@@ -621,18 +652,23 @@ class GrahamEngine:
             return []
 
         def _scan_one(symbol: str) -> tuple[str, Any, StockAnalysis]:
+            cached = self._fundamentals_cache_get(symbol)
             ticker = self._tickers.get(symbol)
-            if ticker is None:
+            if ticker is None and cached is None:
                 ticker = yf.Ticker(symbol)
             previous = self._analyses.get(symbol)
-            try:
-                analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
-            except Exception as exc:
-                analysis = StockAnalysis(
-                    ticker=symbol,
-                    company_name=symbol,
-                    notes=[f"analysis error: {exc}"],
-                )
+            if cached is not None:
+                analysis = cached
+            else:
+                try:
+                    analysis = analyze_symbol(symbol, ticker, y=self.y, require_dividend=self.require_dividend)
+                    self._fundamentals_cache_set(symbol, analysis)
+                except Exception as exc:
+                    analysis = StockAnalysis(
+                        ticker=symbol,
+                        company_name=symbol,
+                        notes=[f"analysis error: {exc}"],
+                    )
             override_name = self._company_name_overrides.get(symbol)
             if override_name and (not analysis.company_name or analysis.company_name == symbol):
                 analysis.company_name = override_name
@@ -661,7 +697,7 @@ class GrahamEngine:
             return symbol, ticker, analysis
 
         next_analyses: dict[str, StockAnalysis] = {}
-        max_workers = min(4, max(1, len(symbols)))
+        max_workers = _resolve_scan_workers(len(symbols))
 
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             for symbol, ticker, analysis in pool.map(_scan_one, symbols):
@@ -670,6 +706,46 @@ class GrahamEngine:
 
         self._analyses = next_analyses
         return rank_analyses(self.analyses)
+
+    def _copy_analysis(self, analysis: StockAnalysis) -> StockAnalysis:
+        return StockAnalysis(
+            ticker=analysis.ticker,
+            company_name=analysis.company_name,
+            score=analysis.score,
+            price=analysis.price,
+            price_time=analysis.price_time,
+            intrinsic_value=analysis.intrinsic_value,
+            mos=analysis.mos,
+            pe=analysis.pe,
+            pb=analysis.pb,
+            dividend_rate=analysis.dividend_rate,
+            criteria=[
+                CriterionResult(
+                    index=criterion.index,
+                    label=criterion.label,
+                    status=criterion.status,
+                    note=criterion.note,
+                )
+                for criterion in analysis.criteria
+            ],
+            notes=list(analysis.notes),
+        )
+
+    def _fundamentals_cache_get(self, symbol: str) -> StockAnalysis | None:
+        entry = self._fundamentals_cache.get(symbol)
+        if entry is None:
+            return None
+        expires_at, analysis = entry
+        if time.time() >= expires_at:
+            self._fundamentals_cache.pop(symbol, None)
+            return None
+        return self._copy_analysis(analysis)
+
+    def _fundamentals_cache_set(self, symbol: str, analysis: StockAnalysis) -> None:
+        self._fundamentals_cache[symbol] = (
+            time.time() + float(self._fundamentals_cache_ttl_seconds),
+            self._copy_analysis(analysis),
+        )
 
     def refresh_prices(self) -> list[StockAnalysis]:
         for symbol in self.universe:

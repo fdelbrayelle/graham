@@ -214,6 +214,68 @@ def test_fetch_public_index_constituents_prefers_nikkei_source(monkeypatch) -> N
     assert names["7203.T"] == "Toyota Motor"
 
 
+def test_fetch_public_index_constituents_uses_wikipedia_for_sp500(monkeypatch) -> None:
+    processor = _processor()
+    monkeypatch.setattr(
+        processor,
+        "_fetch_wikipedia_components_with_names",
+        lambda index_name: (["AAPL", "MSFT"], {"AAPL": "Apple", "MSFT": "Microsoft"}),
+    )
+    values, note, names = processor._fetch_public_index_constituents("sp500")
+    assert values == ["AAPL", "MSFT"]
+    assert note == "wikipedia:sp500"
+    assert names["AAPL"] == "Apple"
+
+
+def test_fetch_index_tickers_short_circuits_on_large_public_payload(monkeypatch) -> None:
+    processor = _processor()
+    public_values = [f"T{i:03d}" for i in range(450)]
+    monkeypatch.setattr(
+        processor,
+        "_fetch_public_index_constituents",
+        lambda index_name: (public_values, "wikipedia:sp500", {}),
+    )
+    calls = {"nasdaq": 0}
+
+    def fake_nasdaq(symbol: str) -> list[str]:
+        calls["nasdaq"] += 1
+        return []
+
+    monkeypatch.setattr(processor, "_fetch_nasdaq_constituents", fake_nasdaq)
+
+    class FakeTicker:
+        constituents: list[str] = []
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> FakeTicker:
+            return FakeTicker()
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+
+    values, note, _ = processor._fetch_index_tickers("sp500")
+
+    assert len(values) == 450
+    assert "wikipedia:sp500" in note
+    assert calls["nasdaq"] == 0
+
+
+def test_fetch_wikipedia_components_sp500_uses_single_url_encoding(monkeypatch) -> None:
+    processor = _processor()
+    captured: dict[str, str] = {}
+
+    def fake_load_json(url: str, headers: dict[str, str]) -> dict:
+        captured["url"] = url
+        return {"parse": {"text": "<table class='wikitable'></table>"}}
+
+    monkeypatch.setattr(processor, "_load_json", fake_load_json)
+    processor._fetch_wikipedia_components_with_names("sp500")
+
+    url = captured["url"]
+    assert "List_of_S%26P_500_companies" in url
+    assert "List_of_S%2526P_500_companies" not in url
+
+
 def test_api_json_cache_uses_ttl(monkeypatch) -> None:
     processor = _processor()
     calls = {"count": 0}
@@ -230,3 +292,72 @@ def test_api_json_cache_uses_ttl(monkeypatch) -> None:
 
     assert first == second
     assert calls["count"] == 1
+
+
+def test_fetch_index_tickers_uses_index_cache(monkeypatch) -> None:
+    processor = _processor()
+    calls = {"ishares": 0, "nasdaq": 0}
+
+    monkeypatch.setattr(
+        processor,
+        "_fetch_public_index_constituents",
+        lambda index_name: (["AAPL"], "public:demo", {"AAPL": "Apple"}),
+    )
+
+    def fake_ishares(symbol: str) -> list[str]:
+        calls["ishares"] += 1
+        return ["MSFT"]
+
+    def fake_nasdaq(symbol: str) -> list[str]:
+        calls["nasdaq"] += 1
+        return []
+
+    monkeypatch.setattr(processor, "_fetch_ishares_holdings", fake_ishares)
+    monkeypatch.setattr(processor, "_fetch_nasdaq_constituents", fake_nasdaq)
+
+    class FakeTicker:
+        constituents: list[str] = []
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> FakeTicker:
+            return FakeTicker()
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+
+    first = processor._fetch_index_tickers("msci_world")
+    second = processor._fetch_index_tickers("msci_world")
+
+    assert first == second
+    assert calls["ishares"] == 1
+    assert calls["nasdaq"] == 1
+
+
+def test_fetch_index_tickers_cache_respects_ttl(monkeypatch) -> None:
+    processor = _processor()
+    processor._index_cache_ttl_seconds = 0
+    calls = {"ishares": 0}
+
+    monkeypatch.setattr(processor, "_fetch_public_index_constituents", lambda index_name: ([], "", {}))
+    monkeypatch.setattr(processor, "_fetch_nasdaq_constituents", lambda symbol: [])
+
+    def fake_ishares(symbol: str) -> list[str]:
+        calls["ishares"] += 1
+        return ["AAPL"]
+
+    monkeypatch.setattr(processor, "_fetch_ishares_holdings", fake_ishares)
+
+    class FakeTicker:
+        constituents: list[str] = []
+
+    class FakeYF:
+        @staticmethod
+        def Ticker(symbol: str) -> FakeTicker:
+            return FakeTicker()
+
+    monkeypatch.setitem(__import__("sys").modules, "yfinance", FakeYF)
+
+    processor._fetch_index_tickers("msci_world")
+    processor._fetch_index_tickers("msci_world")
+
+    assert calls["ishares"] == 2
