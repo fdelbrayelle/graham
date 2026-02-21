@@ -5,7 +5,7 @@ Benjamin Graham (1894-1976) is widely considered the father of value investing. 
 This project applies a practical, KISS version of Graham-style screening in a fullscreen terminal UI.
 
 Reference:
-- https://fr.wikipedia.org/wiki/Formule_de_Benjamin_Graham
+- [Benjamin Graham formula](https://en.wikipedia.org/wiki/Benjamin_Graham_formula)
 
 # 🚀 Installation
 
@@ -84,6 +84,31 @@ Score formula:
 6. P/B < 1.20
 7. Dividends required by default (`dividendRate > 0`)
 
+Classical Graham-style rules (more detailed):
+1. Adequate company size
+   - Avoid very small companies with fragile access to financing and limited reporting quality.
+   - In practice, this is often implemented with minimum revenue or market-cap thresholds.
+2. Strong financial condition
+   - Balance-sheet resilience is central: healthy liquidity and controlled leverage.
+   - Typical checks include current ratio, debt versus current assets, and debt service capacity.
+3. Earnings stability
+   - Prefer businesses with positive earnings over a long period, avoiding repeated deficits.
+   - Stability reduces downside risk and improves confidence in valuation inputs.
+4. Long dividend record
+   - Graham historically favored companies paying regular dividends for many years (often ~20 years).
+   - A long dividend history acts as a discipline signal for management and cash generation.
+5. Earnings growth
+   - Look for sustained, not one-off, profit growth over multi-year windows.
+   - CAGR-like approaches are commonly used to smooth noisy year-to-year moves.
+6. Moderate price/earnings ratio
+   - Classical references often mention a cap around 15x earnings.
+   - The spirit is paying a reasonable multiple, not maximum growth premiums.
+7. Moderate price/book ratio
+   - Classical references often mention a cap near 1.5x book value.
+   - Combined with P/E, this aims to avoid overpaying for low-quality balance sheets.
+
+This app intentionally uses stricter default thresholds for criteria 5 and 6 (`P/E <= 9.0`, `P/B < 1.20`) to stay conservative.
+
 Intrinsic value formula:
 - `V = EPS * (8.5 + 2g) * 4.4 / Y`
 - `Y` configurable (default `4.4`)
@@ -132,15 +157,26 @@ Default model: `none`
 - `none` means no LLM API call
 - if a model is set, `/explain` can call `litellm`
 - if LLM call fails, the app logs the error and falls back to a deterministic template
+- `/model` accepts any valid provider model ID; the built-in suggestion list contains verified official IDs.
 
 Environment variables (depending on provider):
 - `OPENAI_API_KEY`
 - `ANTHROPIC_API_KEY`
 - `GEMINI_API_KEY`
 
-Example:
+Examples:
 ```text
-/model gpt-4.1-mini
+/model gpt-5.2
+/model claude-opus-4-5
+/model gemini-3-pro-preview
+```
+
+Configure API keys in your shell before launching `graham`:
+```bash
+export OPENAI_API_KEY="sk-..."
+export ANTHROPIC_API_KEY="..."
+export GEMINI_API_KEY="..."
+graham
 ```
 
 # 🌍 Display Language

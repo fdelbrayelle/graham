@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shlex
 from pathlib import Path
 
@@ -37,7 +38,36 @@ class CommandProcessor:
         "/rating",
         "/export",
     ]
-    MODELS = ["none", "gpt-4.1-mini", "claude-3-5-sonnet", "gemini-2.0-flash"]
+    MODELS = [
+        "none",
+        # OpenAI (official IDs)
+        "gpt-5.2",
+        "gpt-5.2-codex",
+        "gpt-5.1",
+        "gpt-5.1-codex",
+        "gpt-5.1-codex-max",
+        "gpt-5",
+        "gpt-5-mini",
+        "gpt-5-nano",
+        "gpt-5-pro",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        # Anthropic (official IDs/aliases)
+        "claude-opus-4-5",
+        "claude-sonnet-4-5",
+        "claude-haiku-4-5",
+        "claude-opus-4-5-20251101",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        # Gemini (official IDs)
+        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-flash-preview-09-2025",
+        "gemini-2.5-flash-lite-preview-09-2025",
+    ]
     SCAN_OPTIONS = ["--top", "--min-score", "--refresh"]
     EXPORT_FORMATS = ["csv", "json"]
     LANGUAGE_CODES = COMMON_LANGUAGE_CODES
@@ -143,7 +173,10 @@ class CommandProcessor:
             if not args:
                 return self._t(f"Current model: {self.app.model}. Usage: /model [none|model-name]")
             self.app.model = args[0]
-            return self._t(f"Active model: {self.app.model}")
+            key_hint = self._model_key_hint(self.app.model)
+            if key_hint is None:
+                return self._t(f"Active model: {self.app.model}")
+            return self._t(f"Active model: {self.app.model}. {key_hint}")
 
         if command == "/universe":
             if not args:
@@ -408,6 +441,26 @@ class CommandProcessor:
                 continue
             count += 1
         return description, count
+
+    def _model_key_hint(self, model: str) -> str | None:
+        value = model.strip().lower()
+        if not value or value == "none":
+            return None
+
+        if value.startswith("gpt-") or value.startswith("o"):
+            return self._env_hint("OPENAI_API_KEY")
+        if value.startswith("claude-"):
+            return self._env_hint("ANTHROPIC_API_KEY")
+        if value.startswith("gemini-"):
+            return self._env_hint("GEMINI_API_KEY")
+        return self._t(
+            "Custom model ID: make sure the corresponding provider API key is set in your environment."
+        )
+
+    def _env_hint(self, env_key: str) -> str:
+        if os.getenv(env_key):
+            return self._t(f"{env_key} detected.")
+        return self._t(f"{env_key} is missing. Export it before using this model.")
 
 
 def discover_universe_names() -> list[str]:
