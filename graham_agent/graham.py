@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import yfinance as yf
+if TYPE_CHECKING:
+    import yfinance as yf
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -71,7 +72,7 @@ def _sort_key(value: Any) -> float:
         return 0.0
 
 
-def extract_eps_series(ticker: yf.Ticker) -> list[float]:
+def extract_eps_series(ticker: Any) -> list[float]:
     frames = [
         getattr(ticker, "income_stmt", None),
         getattr(ticker, "quarterly_income_stmt", None),
@@ -112,7 +113,7 @@ def compute_eps_cagr_percent(eps_series: list[float]) -> float:
     return ((end / start) ** (1 / periods) - 1) * 100
 
 
-def _extract_price(info: dict[str, Any], ticker: yf.Ticker) -> float | None:
+def _extract_price(info: dict[str, Any], ticker: Any) -> float | None:
     for key in ("currentPrice", "regularMarketPrice", "previousClose"):
         number = safe_float(info.get(key))
         if number is not None and number > 0:
@@ -302,7 +303,7 @@ def _build_criteria(
 
 def analyze_symbol(
     symbol: str,
-    ticker: yf.Ticker,
+    ticker: Any,
     y: float = 4.4,
     require_dividend: bool = True,
 ) -> StockAnalysis:
@@ -395,7 +396,7 @@ class GrahamEngine:
         self.y = y
         self.require_dividend = require_dividend
         self.universe: list[str] = []
-        self._tickers: dict[str, yf.Ticker] = {}
+        self._tickers: dict[str, Any] = {}
         self._analyses: dict[str, StockAnalysis] = {}
 
     @property
@@ -415,6 +416,8 @@ class GrahamEngine:
         return self.universe
 
     def scan_fundamentals(self) -> list[StockAnalysis]:
+        import yfinance as yf
+
         for symbol in self.universe:
             ticker = self._tickers.get(symbol)
             if ticker is None:
@@ -440,7 +443,7 @@ class GrahamEngine:
                 analysis.pe = analysis.pe * (price / previous_price)
         return rank_analyses(self.analyses)
 
-    def _read_live_price(self, ticker: yf.Ticker) -> float | None:
+    def _read_live_price(self, ticker: Any) -> float | None:
         try:
             fast_info = getattr(ticker, "fast_info", None)
             if fast_info is not None:

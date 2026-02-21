@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from litellm import completion
-
 
 class LLMError(Exception):
     """Raised when the LLM request fails."""
@@ -14,6 +12,8 @@ def ask_model(model: str, system_prompt: str, user_prompt: str, timeout: int = 2
         return ""
 
     try:
+        from litellm import completion
+
         response: Any = completion(
             model=model,
             messages=[
