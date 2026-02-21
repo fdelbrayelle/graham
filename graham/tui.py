@@ -130,6 +130,7 @@ class GrahamApp(App[None]):
         self._scan_spinner_step = 0
         self._scan_spinner_frames = ["-", "\\", "|", "/"]
         self._scan_spinner_timer = None
+        self._details_nav_mode = False
         self.score_green_min = self.settings.score_green_min
         self.score_orange_min = self.settings.score_orange_min
         self.processor = CommandProcessor(self)
@@ -138,7 +139,7 @@ class GrahamApp(App[None]):
         yield Header(show_clock=True)
         with Horizontal(id="center"):
             yield DataTable(id="ranking")
-            yield Static(self.tr("No row selected."), id="details", can_focus=True)
+            yield Static(self.tr("No row selected."), id="details")
         yield RichLog(id="log", markup=False, wrap=True)
         with Vertical(id="input-wrap"):
             yield Input(placeholder=self.tr("Type /help"), id="prompt")
@@ -436,14 +437,13 @@ class GrahamApp(App[None]):
         self.write_log("No ticker selected. Type /help")
 
     def on_key(self, event: Key) -> None:
-        details = self.query_one("#details", Static)
-        if self.focused is details:
+        if self._details_nav_mode:
             if event.key in {"up", "down", "pageup", "pagedown", "home", "end"}:
                 self._scroll_details(event.key)
                 event.stop()
                 return
             if event.key == "escape":
-                self.query_one("#prompt", Input).focus()
+                self.action_focus_prompt()
                 event.stop()
                 return
 
@@ -652,9 +652,11 @@ class GrahamApp(App[None]):
         return
 
     def action_focus_details(self) -> None:
-        self.query_one("#details", Static).focus()
+        self._details_nav_mode = True
+        self.write_log("Details navigation enabled (Esc or Ctrl+P to return to prompt).")
 
     def action_focus_prompt(self) -> None:
+        self._details_nav_mode = False
         self.query_one("#prompt", Input).focus()
 
     def _scroll_details(self, key: str) -> None:
