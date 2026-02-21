@@ -1,11 +1,13 @@
-# France CAC40 style selection
+# France large caps
+RMS.PA
 MC.PA
-OR.PA
-SAN.PA
 AI.PA
+SU.PA
+TTE.PA
+SAN.PA
+OR.PA
 BNP.PA
 ENGI.PA
-SU.PA
 DG.PA
 CAP.PA
 CS.PA

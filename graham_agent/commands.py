@@ -11,8 +11,10 @@ UNIVERSE_PRESETS: dict[str, list[str]] = {
     "world": ["AAPL", "MSFT", "NVDA", "ASML", "NVO", "SHEL", "TTE", "TM", "SONY", "TSM", "SAP", "BABA"],
     "usa": ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "BRK-B", "JPM", "JNJ", "PG", "XOM", "PEP", "KO", "HD", "UNH"],
     "emerging_markets": ["TSM", "BABA", "PDD", "MELI", "INFY", "VALE", "NU", "ITUB", "HDB", "NIO", "JD", "BIDU"],
+    "china": ["BABA", "JD", "PDD", "BIDU", "TCOM", "NTES", "LI", "XPEV", "NIO", "TME", "BEKE", "BILI"],
+    "india": ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "SBIN.NS", "ITC.NS", "HINDUNILVR.NS", "LT.NS", "SUNPHARMA.NS", "BHARTIARTL.NS", "MARUTI.NS", "BAJFINANCE.NS"],
     "europe": ["ASML", "NVO", "SAP", "SHEL", "TTE", "SNY", "AZN", "UL", "BP", "RHHBY", "NESN.SW", "MC.PA"],
-    "france": ["MC.PA", "OR.PA", "SAN.PA", "AI.PA", "BNP.PA", "ENGI.PA", "SU.PA", "DG.PA", "CAP.PA", "CS.PA", "KER.PA", "VIE.PA"],
+    "france": ["RMS.PA", "MC.PA", "AI.PA", "SU.PA", "TTE.PA", "SAN.PA", "OR.PA", "BNP.PA", "ENGI.PA", "DG.PA", "CAP.PA", "CS.PA", "KER.PA", "VIE.PA"],
     "japan": ["7203.T", "6758.T", "9984.T", "8035.T", "6501.T", "6861.T", "9432.T", "8306.T", "6098.T", "7974.T", "6367.T", "9433.T"],
 }
 UNIVERSE_PRESET_DESCRIPTIONS: dict[str, str] = {
@@ -20,6 +22,8 @@ UNIVERSE_PRESET_DESCRIPTIONS: dict[str, str] = {
     "world": "World large caps and global leaders",
     "usa": "USA large caps",
     "emerging_markets": "Emerging markets mix",
+    "china": "China large caps and leading ADRs",
+    "india": "India leaders (NSE symbols)",
     "europe": "Europe large caps",
     "france": "France CAC40 style selection",
     "japan": "Japan large caps",
@@ -33,6 +37,10 @@ UNIVERSE_ALIASES = {
     "emerging": "emerging_markets",
     "emerging_markets": "emerging_markets",
     "emerging-markets": "emerging_markets",
+    "china": "china",
+    "chine": "china",
+    "india": "india",
+    "inde": "india",
     "europe": "europe",
     "france": "france",
     "japan": "japan",
@@ -157,19 +165,31 @@ class CommandProcessor:
                 "world",
                 "usa",
                 "emerging_markets",
+                "china",
+                "india",
                 "europe",
                 "france",
                 "japan",
                 "custom:./universes/sample.txt",
             ]
             base.extend(self.app.available_universes())
-            merged = sorted(set(base))
+            merged = self._unique_preserve_order(base)
             return [name for name in merged if name.startswith(current)]
 
         if cmd == "/default-universe":
-            base = ["sample", "world", "usa", "emerging_markets", "europe", "france", "japan"]
+            base = [
+                "sample",
+                "world",
+                "usa",
+                "emerging_markets",
+                "china",
+                "india",
+                "europe",
+                "france",
+                "japan",
+            ]
             base.extend(self.app.available_universes())
-            merged = sorted(set(base))
+            merged = self._unique_preserve_order(base)
             return [name for name in merged if name.startswith(current)]
 
         if cmd == "/export":
@@ -238,12 +258,17 @@ class CommandProcessor:
         if command == "/universe":
             if not args:
                 return self._t(
-                    "Usage: /universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]"
+                    "Usage: /universe [sample|world|usa|emerging_markets|china|india|europe|france|japan|custom:path]"
                 )
             tickers, note = self.resolve_universe(args[0])
             if not tickers:
                 return self._t(f"Empty universe. {note}")
             self.app.set_universe(tickers, note, remember_spec=normalize_universe_spec(args[0]))
+            await self.app.run_scan(
+                top=self.app.scan_top,
+                min_score=self.app.scan_min_score,
+                refresh=self.app.refresh_seconds,
+            )
             return self._t(f"Universe loaded: {len(tickers)} tickers ({note})")
 
         if command == "/scan":
@@ -342,7 +367,7 @@ class CommandProcessor:
             "/languages\n"
             "/lang [language-code]\n"
             "/model [none|model-name]\n"
-            "/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]\n"
+            "/universe [sample|world|usa|emerging_markets|china|india|europe|france|japan|custom:path]\n"
             "/default-universe [name|custom:path]\n"
             "/scan [--top N] [--min-score N] [--refresh SECONDS]\n"
             "/screen TICKERS_CSV\n"
@@ -523,6 +548,16 @@ class CommandProcessor:
         if os.getenv(env_key):
             return self._t(f"{env_key} detected.")
         return self._t(f"{env_key} is missing. Export it before using this model.")
+
+    def _unique_preserve_order(self, items: list[str]) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            if item in seen:
+                continue
+            seen.add(item)
+            result.append(item)
+        return result
 
 
 def discover_universe_names() -> list[str]:

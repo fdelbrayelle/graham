@@ -1,0 +1,13 @@
+# China large caps and leading ADRs
+BABA
+JD
+PDD
+BIDU
+TCOM
+NTES
+LI
+XPEV
+NIO
+TME
+BEKE
+BILI

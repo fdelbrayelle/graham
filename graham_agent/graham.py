@@ -172,11 +172,38 @@ def _extract_price_time(info: dict[str, Any], ticker: Any) -> str | None:
     return None
 
 
+def _extract_balance_value(ticker: Any, labels: tuple[str, ...]) -> float | None:
+    try:
+        balance_sheet = getattr(ticker, "balance_sheet", None)
+        if balance_sheet is None or getattr(balance_sheet, "empty", True):
+            return None
+        for label in labels:
+            if label not in balance_sheet.index:
+                continue
+            series = balance_sheet.loc[label]
+            values: list[tuple[float, float]] = []
+            for column, item in series.items():
+                number = safe_float(item)
+                if number is None:
+                    continue
+                values.append((_sort_key(column), number))
+            if not values:
+                continue
+            values.sort(key=lambda pair: pair[0])
+            return values[-1][1]
+    except Exception:
+        return None
+    return None
+
+
 def _build_criteria(
     info: dict[str, Any],
     eps_series: list[float],
     price: float | None,
     require_dividend: bool,
+    total_debt_override: float | None = None,
+    current_assets_override: float | None = None,
+    current_liabilities_override: float | None = None,
 ) -> list[CriterionResult]:
     criteria: list[CriterionResult] = []
 
@@ -189,8 +216,10 @@ def _build_criteria(
         )
     )
 
-    total_debt = safe_float(info.get("totalDebt"))
-    current_assets = safe_float(info.get("totalCurrentAssets"))
+    total_debt = total_debt_override if total_debt_override is not None else safe_float(info.get("totalDebt"))
+    current_assets = (
+        current_assets_override if current_assets_override is not None else safe_float(info.get("totalCurrentAssets"))
+    )
     if total_debt is None or current_assets is None or current_assets <= 0:
         criteria.append(
             CriterionResult(
@@ -214,7 +243,11 @@ def _build_criteria(
 
     current_ratio = safe_float(info.get("currentRatio"))
     if current_ratio is None:
-        current_liabilities = safe_float(info.get("totalCurrentLiabilities"))
+        current_liabilities = (
+            current_liabilities_override
+            if current_liabilities_override is not None
+            else safe_float(info.get("totalCurrentLiabilities"))
+        )
         if current_assets is not None and current_liabilities is not None and current_liabilities > 0:
             current_ratio = current_assets / current_liabilities
     if current_ratio is None:
@@ -361,6 +394,37 @@ def analyze_symbol(
     price = _extract_price(info, ticker)
     price_time = _extract_price_time(info, ticker)
     eps_series = extract_eps_series(ticker)
+    total_debt = safe_float(info.get("totalDebt"))
+    current_assets = safe_float(info.get("totalCurrentAssets"))
+    current_liabilities = safe_float(info.get("totalCurrentLiabilities"))
+
+    if total_debt is None:
+        total_debt = _extract_balance_value(
+            ticker,
+            (
+                "Total Debt",
+                "Net Debt",
+                "TotalDebt",
+            ),
+        )
+    if current_assets is None:
+        current_assets = _extract_balance_value(
+            ticker,
+            (
+                "Current Assets",
+                "Total Current Assets",
+                "CurrentAssets",
+            ),
+        )
+    if current_liabilities is None:
+        current_liabilities = _extract_balance_value(
+            ticker,
+            (
+                "Current Liabilities",
+                "Total Current Liabilities",
+                "CurrentLiabilities",
+            ),
+        )
 
     trailing_eps = safe_float(info.get("trailingEps")) or safe_float(info.get("epsTrailingTwelveMonths"))
     if trailing_eps is None and eps_series:
@@ -380,6 +444,9 @@ def analyze_symbol(
         eps_series=eps_series,
         price=price,
         require_dividend=require_dividend,
+        total_debt_override=total_debt,
+        current_assets_override=current_assets,
+        current_liabilities_override=current_liabilities,
     )
 
     score = compute_score(criteria)

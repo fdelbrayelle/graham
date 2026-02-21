@@ -134,7 +134,7 @@ Robustness policy:
 - `/languages`
 - `/lang [language-code]`
 - `/model [none|model-name]`
-- `/universe [sample|world|usa|emerging_markets|europe|france|japan|custom:path]`
+- `/universe [sample|world|usa|emerging_markets|china|india|europe|france|japan|custom:path]`
 - `/default-universe [name|custom:path]`
 - `/scan [--top N] [--min-score N] [--refresh SECONDS]`
 - `/screen TICKERS_CSV`
@@ -232,6 +232,8 @@ Available universe files now include:
 - `world`
 - `usa`
 - `emerging_markets`
+- `china`
+- `india`
 - `europe`
 - `france`
 - `japan`
