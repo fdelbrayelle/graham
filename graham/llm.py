@@ -26,9 +26,15 @@ class LLMError(Exception):
     """Raised when the LLM request fails."""
 
 
-def build_moat_prompt(ticker: str) -> str:
+def build_moat_prompt(ticker: str, language_code: str | None = None) -> str:
     normalized = ticker.strip().upper()
-    return MOAT_PROMPT_TEMPLATE.replace("[TICKER]", normalized)
+    base_prompt = MOAT_PROMPT_TEMPLATE.replace("[TICKER]", normalized)
+    code = (language_code or "en").strip().lower() or "en"
+    language_instruction = (
+        "\n\nImportant: Respond entirely in the same language configured with /lang "
+        f"(current language code: {code})."
+    )
+    return f"{base_prompt}{language_instruction}"
 
 
 def _infer_provider(model: str) -> str | None:

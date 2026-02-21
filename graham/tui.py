@@ -386,7 +386,7 @@ class GrahamApp(App[None]):
             return self.tr("Usage: /moat TICKER")
 
         self.write_log(f"Generating moat analysis for {symbol} with model {self.model}...", translate=False)
-        prompt = build_moat_prompt(symbol)
+        prompt = build_moat_prompt(symbol, self.language)
         try:
             response = await asyncio.to_thread(ask_model, self.model, "", prompt, 60)
         except LLMError as exc:

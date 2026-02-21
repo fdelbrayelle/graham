@@ -10,9 +10,10 @@ from graham.llm import (
 
 
 def test_build_moat_prompt_replaces_placeholder_with_uppercase_ticker() -> None:
-    built = build_moat_prompt("msft")
+    built = build_moat_prompt("msft", "fr")
     assert "[TICKER]" not in built
-    assert built == MOAT_PROMPT_TEMPLATE.replace("[TICKER]", "MSFT")
+    assert built.startswith(MOAT_PROMPT_TEMPLATE.replace("[TICKER]", "MSFT"))
+    assert "current language code: fr" in built
 
 
 def test_resolve_litellm_model_prefixes_gemini_and_maps_api_key(monkeypatch) -> None:

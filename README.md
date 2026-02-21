@@ -173,6 +173,7 @@ Default model: `none`
 
 - `none` means no LLM API call
 - if a model is set, `/explain` and `/moat` can call `litellm`
+- `/moat` asks the model to answer in the language currently configured with `/lang`
 - if LLM call fails, the app logs the error and falls back to a deterministic template
 - `/model` accepts any valid provider model ID; the built-in suggestion list contains verified official IDs.
 - for maximum compatibility, you can set explicit IDs like `provider/model` (example: `openai/gpt-5`, `anthropic/claude-sonnet-4-5`, `gemini/gemini-2.5-pro`)
