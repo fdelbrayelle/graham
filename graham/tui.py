@@ -81,7 +81,7 @@ class GrahamApp(App[None]):
 
     #suggestions {
         display: none;
-        max-height: 8;
+        max-height: 10;
         overflow-y: auto;
         border: round #6a994e;
     }
