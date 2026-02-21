@@ -4,11 +4,6 @@
 
 This project applies a practical version of Graham-style screening in a fullscreen terminal UI.
 
-> Past performance does not guarantee future results.  
-> Investing involves risk.  
-> This application does not provide investment advice.  
-> Over 20 years, among professional equity investors, more than 90% of funds underperform the market. Stock picking must therefore be approached with great caution.
-
 Classical Graham-style rules:
 1. Adequate company size
    - Avoid very small companies with fragile access to financing and limited reporting quality.
@@ -35,6 +30,13 @@ Classical Graham-style rules:
 Reference:
 - [Benjamin Graham formula](https://en.wikipedia.org/wiki/Benjamin_Graham_formula)
 - [The Intelligent Investor](https://en.wikipedia.org/wiki/The_Intelligent_Investor)
+
+# ⚠️ Disclaimer
+
+- Past performance does not guarantee future results.  
+- Investing involves risk.  
+- This application does not provide investment advice.  
+- Over 20 years, among professional equity investors, more than 90% of funds underperform the market (SPIVA). Stock picking must therefore be approached with great caution.
 
 # 🎬 Demo
 
