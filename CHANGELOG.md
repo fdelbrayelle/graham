@@ -6,6 +6,21 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-02-21
+
+### Added
+- API response cache (non-yfinance) with 1 hour TTL for index constituent loaders.
+- Company name override reconciliation for index sources (Nikkei/TOPIX/Wikipedia-derived providers).
+
+### Changed
+- `/indices` pipeline now passes source company metadata into the scan engine before yfinance enrichment.
+- `/moat` keeps the detailed startup log (`with model ...`) while avoiding duplicated start output.
+
+### Fixed
+- Resolved TUI shutdown crashes (`NoMatches '#log'`) by making background logging/loading indicators safe after unmount.
+- Improved scan resilience when yfinance `info` fails: keep price/as_of from available snapshots and preserve last valid metrics.
+- Reduced yfinance error noise in terminal output and lowered concurrent fundamentals workers to limit transient API failures.
+
 ## [0.3.0] - 2026-02-21
 
 ### Added
