@@ -6,6 +6,23 @@ The format is based on Keep a Changelog, and this project follows Semantic Versi
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-02-21
+
+### Added
+- New `/keys` command and `F1` shortcut to quickly display keyboard shortcuts in the output panel.
+- Keyboard shortcuts `Ctrl+L` (clear outputs) and `Ctrl+R` (ticker/company search mode on the top table).
+- Dynamic index constituent loaders for `nikkei225`, `topix`, `cac40`, `dax40`, `dowjones`, and `eurostoxx` using public sources.
+- Immediate command start feedback plumbing (`command_feedback`) with tests for slash commands.
+
+### Changed
+- Slash commands now always write an immediate output message when validated, even while long-running work is in progress.
+- `/indices` fetching now combines dynamic market/provider sources with existing fallbacks and persists generated universes with updated source note text.
+- Top-table search filtering now matches both `ticker` and `company`.
+
+### Fixed
+- Autocompletion argument replacement for commands like `/moat` and `/lang` when validating suggestions.
+- `/moat` prompt language now follows persisted language configuration from `~/.graham/config.json`.
+
 ## [0.2.0] - 2026-02-21
 
 ### Added
